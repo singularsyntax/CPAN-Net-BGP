@@ -7,7 +7,7 @@ use vars qw( $VERSION );
 
 ## Inheritance and Versioning ##
 
-$VERSION = '0.09';
+$VERSION = '0.15';
 
 ## Module Imports ##
 
@@ -316,7 +316,10 @@ Net::BGP::Process - Class encapsulating BGP session multiplexing functionality
 
     use Net::BGP::Process;
 
-    $bgp = Net::BGP::Process->new( Port => $port );
+    $bgp = Net::BGP::Process->new(
+        Port       => $port,
+        ListenAddr => '1.2.3.4'
+    );
 
     $bgp->add_peer($peer);
     $bgp->remove_peer($peer);
@@ -353,7 +356,7 @@ and may be unable to establish a connection to the B<Net::BGP::Process>.
 
 =head2 ListenAddr
 
-This parameter sets the IP address the BGP process listens on.  Defaults
+This parameter sets the IP address the BGP process listens on. Defaults
 to INADDR_ANY.
 
 I<add_peer()> - add a new peer to the BGP process
@@ -394,11 +397,12 @@ in one of the callback or timer functions).
 
 =head1 SEE ALSO
 
-Net::BGP, Net::BGP::Peer, Net::BGP::Update, Net::BGP::Notification
+Net::BGP, Net::BGP::Peer, Net::BGP::Transport, Net::BGP::Update,
+Net::BGP::Refresh, Net::BGP::Notification
 
 =head1 AUTHOR
 
-Stephen J. Scheck <code@neurosphere.com>
+Stephen J. Scheck <sscheck@cpan.org>
 
 =cut
 

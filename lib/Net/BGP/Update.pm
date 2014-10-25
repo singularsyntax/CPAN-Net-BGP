@@ -14,7 +14,7 @@ use vars qw(
 use Net::BGP::NLRI qw( :origin );
 
 @ISA     = qw( Exporter Net::BGP::NLRI );
-$VERSION = '0.14';
+$VERSION = '0.15';
 
 ## Module Imports ##
 
@@ -738,7 +738,7 @@ Net::BGP::Update - Class encapsulating BGP-4 UPDATE message
     $update = Net::BGP::Update->new(
         NLRI            => [ qw( 10/8 172.168/16 ) ],
         Withdraw        => [ qw( 192.168.1/24 172.10/16 192.168.2.1/32 ) ],
-	# For Net::BGP::NLRI
+        # For Net::BGP::NLRI
         Aggregator      => [ 64512, '10.0.0.1' ],
         AsPath          => [ 64512, 64513, 64514 ],
         AtomicAggregate => 1,
@@ -746,12 +746,12 @@ Net::BGP::Update - Class encapsulating BGP-4 UPDATE message
         LocalPref       => 100,
         MED             => 200,
         NextHop         => '10.0.0.1',
-        Origin          => INCOMPLETE,
+        Origin          => INCOMPLETE
     );
 
     # Construction from a NLRI object:
     $nlri = Net::BGP::NLRI->new( ... );
-    $update = Net::BGP::Update->new($nlri,$nlri_ref,$withdrawn_ref);
+    $update = Net::BGP::Update->new($nlri, $nlri_ref, $withdrawn_ref);
 
     # Object Copy
     $clone = $update->clone();
@@ -784,7 +784,7 @@ I<new()> - create a new Net::BGP::Update object
     $update = Net::BGP::Update->new(
         NLRI            => [ qw( 10/8 172.168/16 ) ],
         Withdraw        => [ qw( 192.168.1/24 172.10/16 192.168.2.1/32 ) ],
-	# For Net::BGP::NLRI
+        # For Net::BGP::NLRI
         Aggregator      => [ 64512, '10.0.0.1' ],
         AsPath          => [ 64512, 64513, 64514 ],
         AtomicAggregate => 1,
@@ -792,7 +792,7 @@ I<new()> - create a new Net::BGP::Update object
         LocalPref       => 100,
         MED             => 200,
         NextHop         => '10.0.0.1',
-        Origin          => INCOMPLETE,
+        Origin          => INCOMPLETE
     );
 
 This is the constructor for Net::BGP::Update objects. It returns a
@@ -805,7 +805,7 @@ An alternative is to construct an object from a Net::BGP::NLRI object:
     $nlri = Net::BGP::NLRI->new( ... );
     $nlri_ref = [ qw( 10/8 172.168/16 ) ];
     $withdrawn_ref = [ qw( 192.168.1/24 172.10/16 192.168.2.1/32 ) ];
-    $update = Net::BGP::Update->new($nlri,$nlri_ref,$withdrawn_ref);
+    $update = Net::BGP::Update->new($nlri, $nlri_ref, $withdrawn_ref);
 
 The NLRI object will not be modified in any way.
 
@@ -853,23 +853,23 @@ same as described for the corresponding named constructor parameters above.
 
 I<ashash()>
 
-This method returns a hash reference index on the prefixes in found in the nlri
-and withdrawn fields.  Withdrawn networks has undefined as value, while nlri
-prefixes all has the same reference to a Net::BGP::NLRI object matching the
-Update object self. 
+This method returns a hash reference indexed on the prefixes as found in the NLRI
+and Withdrawn fields. Withdrawn networks have an undefined value, while NLRI
+prefixes all have the same reference to a Net::BGP::NLRI object matching the
+Update object self.
 
 =head1 EXPORTS
 
-The module does not export anything.
+This module does not export anything.
 
 =head1 SEE ALSO
 
 B<RFC 1771>, B<RFC 1997>, B<Net::BGP>, B<Net::BGP::Process>, B<Net::BGP::Peer>,
-B<Net::BGP::Notification>, B<Net::BGP::NLRI>
+B<Net::BGP::Notification>, B<Net::BGP::ASPath>, B<Net::BGP::NLRI>
 
 =head1 AUTHOR
 
-Stephen J. Scheck <code@neurosphere.com>
+Stephen J. Scheck <sscheck@cpan.org>
 
 =cut
 

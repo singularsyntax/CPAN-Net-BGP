@@ -1,5 +1,8 @@
 Revision history for Perl extension Net::BGP.
 
+0.15	2014-10-23
+	- Update documentation and contact email address.
+
 0.14	2010-09-18
 	- Fix validation of path attribute flags containing extended
           length attribute.

@@ -7,7 +7,7 @@ use vars qw( $VERSION );
 
 ## Inheritance and Versioning ##
 
-$VERSION = '0.14';
+$VERSION = '0.15';
 
 ## End Code Section ##
 
@@ -84,37 +84,25 @@ and the timer is reset. The timer callback functions can perform whatever
 actions are necessary - sending UPDATEs, modifying the state of the peering
 session, house-keeping, etc.
 
-=head1 BUGS
+=head1 SECURITY CONSIDERATIONS
 
-The connection collision resolution code is broken. As currently implemented,
-whenever a connection is received from a peer, the B<Net::BGP::Peer> object
-is cloned and each peer object proceeds through the session establishment
-process until the collision resolution procedure is reached. At this point, if
-the cloned object is chosen by the collison resolution procedure, the original
-peer object is destroyed, leaving the cloned object. Unfortunately, a user
-program will only have a reference to the original peer object it created and
-will have no way of accessing the cloned object. It is therefore recommended
-that B<Net::BGP::Peer> objects be instantiated with the B<Listen> parameter
-set to a false value. This prevents the peer object from receiving connections
-from its BGP peer, although it will continue actively attempting to establish
-sessions. This problem will be addressed in a future revision of B<Net::BGP>.
-
-As an initial revision, the code has not been subjected to a thorough security
-audit. It is possible and likely that exploitable code exists in the packet
-decoding routines. Therefore, it is recommended that the module only be used
-to establish peering sessions with trusted peers, particularly if programs
-using the module will be run with root priviliges (which is necessary if
-programs want to modify the kernel routing table or bind to the well-known
-BGP port 179).
+The code has not been subjected to a thorough security audit. It is possible
+that exploitable code exists in the packet decoding routines. Furthermore, this
+module implements neither the Authentication Information Optional Parameter of
+the OPEN message specified in RFC 1771 nor the TCP MD5 option described in
+RFC 2385. Therefore, it is recommended that the module only be used to establish
+peering sessions with trusted peers, particularly if programs using the module
+will be run with root priviliges (which is necessary if programs want to modify
+the kernel routing table or bind to the well-known BGP port 179).
 
 =head1 SEE ALSO
 
-RFC 1771, and the perldocs for Net::BGP::Process, Net::BGP::Peer, Net::BGP::Update,
-and Net::BGP::Notification
+RFC 4271, RFC 1771, RFC 2385, and the perldocs for Net::BGP::Process,
+Net::BGP::Peer, Net::BGP::Update, and Net::BGP::Notification
 
 =head1 AUTHOR
 
-Stephen J. Scheck <code@neurosphere.com>
+Stephen J. Scheck <sscheck@cpan.org>
 
 =cut
 

@@ -13,7 +13,7 @@ use vars qw(
 ## Inheritance and Versioning ##
 
 @ISA     = qw( Exporter );
-$VERSION = '0.07';
+$VERSION = '0.15';
 
 ## General Definitions ##
 
@@ -1271,13 +1271,14 @@ Net::BGP::Transport - Class encapsulating BGP-4 transport session state and func
 
     $trans = Net::BGP::Transport->new(
         Start                => 1,
-	Parent               => Net::BGP::Peer->new(),
+        Parent               => Net::BGP::Peer->new(),
         ConnectRetryTime     => 300,
         HoldTime             => 60,
         KeepAliveTime        => 20
     );
 
     $version = $trans->version();
+    $established = $trans->is_established();
 
     $trans->start();
     $trans->stop();
@@ -1285,13 +1286,12 @@ Net::BGP::Transport - Class encapsulating BGP-4 transport session state and func
     $trans->update($update);
     $trans->refresh($refresh);
 
-
 =head1 DESCRIPTION
 
 This module encapsulates the state and functionality associated with a BGP
 transport connection. Each instance of a Net::BGP::Transport object
 corresponds to a TCP session with a distinct peer. It should not be used by
-it self, but encapsulated in a Net::BGP::Peer object.
+itself, but encapsulated in a Net::BGP::Peer object.
 
 =head1 CONSTRUCTOR
 
@@ -1314,19 +1314,11 @@ can not be changed.
 
 =item KeepAliveTime
 
-Has the same meaning as their equivalente named argument for Net::BGP::Peer.
+Has the same meaning as the equivalent named argument for Net::BGP::Peer.
 
 =item Parent
 
 The parent Net::BGP::Peer object.
-
-=back
-
-=item renew() - fetch the existing Net::BGP::Peer object from the "object string".
-
-This "reconstructor" returns a previeus constructed object from the
-perl genereted string-context scalar of the object, eg.
-I<Net::BGP::Peer=HASH(0x820952c)>.
 
 =back
 
@@ -1336,6 +1328,8 @@ I<Net::BGP::Peer=HASH(0x820952c)>.
 
 =item version()
 
+=item is_established()
+
 =item start()
 
 =item stop()
@@ -1344,9 +1338,7 @@ I<Net::BGP::Peer=HASH(0x820952c)>.
 
 =item refresh()
 
-=item is_established()
-
-This methods does the actuall I<work> for the methods of the same name in
+These methods do the actual I<work> for the methods of the same name in
 Net::BGP::Peer.
 
 =back
@@ -1357,8 +1349,8 @@ Net::BGP::Peer, Net::BGP, Net::BGP::Update, Net::BGP::Refresh
 
 =head1 AUTHOR
 
-Stephen J. Scheck <code@neurosphere.com> in original Peer.pm form
-Martin Lorensen <lorensen@cpan.org> seperated into Transort.pm
+Stephen J. Scheck <sscheck@cpan.org> in original Peer.pm form
+Martin Lorensen <lorensen@cpan.org> seperated into Transport.pm
 
 =cut
 

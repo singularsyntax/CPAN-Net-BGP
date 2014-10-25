@@ -9,14 +9,14 @@ use vars qw( $VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS @AFI @SAFI );
 ## Inheritance and Versioning ##
 
 @ISA     = qw( Exporter );
-$VERSION = '0.07';
+$VERSION = '0.15';
 
 ## Module Imports ##
 
 use Exporter;
 use Net::BGP::Notification qw( :errors );
 
-## BGP Protocol Error Code and Subcode Enumerations ##
+## BGP Protocol AFI and SAFI Enumerations ##
 
 
 # http://www.iana.org/assignments/address-family-numbers
@@ -147,8 +147,8 @@ Net::BGP::Refresh - Class encapsulating BGP-4 REFRESH message
         SAFI     => $subsequent_address_family_identifier
     );
 
-    $address_family_identifier            = $error->afi();
-    $subsequent_address_family_identifier = $error->safi();
+    $address_family_identifier            = $refresh->afi();
+    $subsequent_address_family_identifier = $refresh->safi();
 
     $peer->refresh($refresh);
 
@@ -186,11 +186,11 @@ a REFRESH message. Default is I<SAFI_BOTH>.
 
 I<afi()> - retrieve the value of the Address Family Identifier field
 
-    $address_family_identifier            = $error->afi();
+    $address_family_identifier            = $refresh->afi();
 
 I<safi()> - retrieve the value of the Subsequent Address Family Identifier field
 
-    $subsequent_address_family_identifier = $error->safi();
+    $subsequent_address_family_identifier = $refresh->safi();
 
 =head1 SEE ALSO
 
@@ -199,10 +199,10 @@ B<Net::BGP::Notification>, B<Net::BGP::Update>
 
 =head1 AUTHOR
 
-Stephen J. Scheck <code@neurosphere.com>
+Stephen J. Scheck <sscheck@cpan.org>
 
 =cut
 
-## End Package Net::BGP::Notification ##
+## End Package Net::BGP::Refresh ##
 
 1;

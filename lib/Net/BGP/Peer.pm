@@ -12,7 +12,7 @@ use vars qw(
 ## Inheritance and Versioning ##
 
 @ISA     = qw( Exporter );
-$VERSION = '0.08';
+$VERSION = '0.15';
 
 ## General Definitions ##
 
@@ -498,9 +498,12 @@ Net::BGP::Peer - Class encapsulating BGP-4 peering session state and functionali
         KeepAliveTime        => 20,
         Listen               => 0,
         Passive              => 0,
+        Refresh              => 0,
         OpenCallback         => \&my_open_callback,
         KeepaliveCallback    => \&my_keepalive_callback,
         UpdateCallback       => \&my_update_callback,
+        RefreshCallback      => \&my_refresh_callback,
+        ResetCallback        => \&my_reset_callback,
         NotificationCallback => \&my_notification_callback,
         ErrorCallback        => \&my_error_callback
     );
@@ -535,6 +538,8 @@ Net::BGP::Peer - Class encapsulating BGP-4 peering session state and functionali
     $peer->set_open_callback(\&my_open_callback);
     $peer->set_keepalive_callback(\&my_keepalive_callback);
     $peer->set_update_callback(\&my_update_callback);
+    $peer->set_refresh_callback(\&my_refresh_callback);
+    $peer->set_reset_callback(\&my_reset_callback);
     $peer->set_notification_callback(\&my_notification_callback);
     $peer->set_error_callback(\&my_error_callback);
 
@@ -635,9 +640,12 @@ connections.
 
 =head2 Refresh
 
-This parameter specifies whether the B<Net::BGP::Peer> will annonce support
-for route refresh ('soft re-configure' as specified by RFC 2918). No support
-for route refresh is implemented - only the B<RefreshCallback> function.
+This parameter specifies whether the B<Net::BGP::Peer> will announce support
+for route refresh ("soft re-configure" as specified by RFC 2918). Route
+refresh is supported by allowing a peer to send a REFRESH message to its
+peer, and by invoking a callback whenever one is received. It is up to the
+program using this module to implement any refresh of data structures
+maintained by the program.
 
 =head2 OpenCallback
 
@@ -667,6 +675,13 @@ peer receives a REFRESH message. It takes a subroutine reference. See
 L<"CALLBACK FUNCTIONS"> later in this manual for further details of
 the conventions of callback invocation.
 
+=head2 ResetCallback
+
+This parameter sets the callback function which is invoked when the
+peer session resets for any reason. It takes a subroutine reference. See
+L<"CALLBACK FUNCTIONS"> later in this manual for further details of
+the conventions of callback invocation.
+
 =head2 NotificationCallback
 
 This parameter sets the callback function which is invoked when the
@@ -684,8 +699,8 @@ invocation.
 
 I<renew> - fetch the existing Net::BGP::Peer object from the "object string".
 
-This "reconstructor" returns a previeus constructed object from the
-perl genereted string-context scalar of the object, eg.
+This "reconstructor" returns a previously constructed object from the
+perl-generated scalar context string of the object, e.g.
 I<Net::BGP::Peer=HASH(0x820952c)>.
 
 =head1 ACCESSOR METHODS
@@ -723,7 +738,7 @@ I<refresh()> - send a BGP REFRESH message to the peer
     $peer->refresh($refresh);
 
 This method sends the peer a REFRESH message. It takes a reference
-to a Net::BGP::Refesh object. If no argument is provided, a default
+to a Net::BGP::Refresh object. If no argument is provided, a default
 Net::BGP::Refresh object is constructed. See the Net::BGP::Refresh
 manual page for details on setting REFRESH attributes.
 
@@ -788,12 +803,13 @@ I<set_notification_callback()>
 I<set_error_callback()>
 
 These methods set the callback functions which are invoked whenever the
-peer receives the corresponding BGP message type from its peer. They
-can be set in the constructor as well as with these methods. These methods
-each take one argument, which is the subroutine reference to be invoked.
-A callback function can be removed by calling the corresponding one of these
-methods and passing it the perl I<undef> value. For callback definition and
-invocation conventions see L<"CALLBACK FUNCTIONS"> later in this manual.
+peer receives the corresponding BGP message type from its peer or one of the
+special events described below occurs. They can be set in the constructor as
+well as with these methods. These methods each take one argument, which is
+the subroutine reference to be invoked. A callback function can be removed
+by calling the corresponding one of these methods and passing it the perl
+I<undef> value. For callback definition and invocation conventions see
+L<"CALLBACK FUNCTIONS"> later in this manual.
 
 I<add_timer()> - add a program defined timer callback function
 
@@ -835,7 +851,7 @@ and KEEPALIVE callbacks, this is the only argument passed. It is very unlikely
 that applications will be interested in OPEN and KEEPALIVE events, since the
 B<Net::BGP> module handles all details of OPEN and KEEPALIVE message processing
 in order to establish and maintain BGP sessions. Callback handling for these
-messages is mainly included for the sake of completeness. For UPDATE and
+messages is mainly included for the sake of completeness. For UPDATE, REFRESH, and
 NOTIFICATION messages, however, most applications will install callback handlers.
 Whenever an UPDATE, REFRESH, NOTIFICATION, or error handler is called, the object
 will pass a second argument. In the first two cases, this is a B<Net::BGP::Update>
@@ -844,8 +860,8 @@ in the UPDATE or REFRESH message, while in the latter two cases it is a
 B<Net::BGP::Notification> object encapsulating the information in the
 NOTIFICATION message sent or received.
 
-The RESET callback is special, since it is used whenever an established BGP
-session is reset, even though no message has been recieved or sent. The REFRESH
+The reset callback is special, since it is used whenever an established BGP
+session is reset, even though no message has been received or sent. The REFRESH
 callback is also special, since it is also called without a REFRESH object
 whenever a BGP session is established. The two callbacks can be used to clear
 and retransmit a RIB from/to the peer in question.
@@ -909,7 +925,7 @@ Net::BGP::Refresh, Net::BGP::Notification
 
 =head1 AUTHOR
 
-Stephen J. Scheck <code@neurosphere.com>
+Stephen J. Scheck <sscheck@cpan.org>
 
 =cut
 
