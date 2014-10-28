@@ -30,7 +30,6 @@ sub new
     my $this = {
         _read_fh       => IO::Select->new(),
         _write_fh      => IO::Select->new(),
-        _error_fh      => IO::Select->new(),
         _peer_list     => {},
         _peer_addr     => {},
         _trans_sock     => {},
@@ -134,7 +133,7 @@ sub event_loop
 
 	$! = 0;
 
-        my @ready = IO::Select->select($this->{_read_fh}, $this->{_write_fh}, $this->{_error_fh}, $min_timer);
+        my @ready = IO::Select->select($this->{_read_fh}, $this->{_write_fh}, undef, $min_timer);
 
         if ( @ready ) {
 
@@ -153,12 +152,6 @@ sub event_loop
             foreach my $ready ( @{$ready[1]} ) {
                 my $trans = $this->{_trans_sock_map}->{$ready};
                 $trans->_handle_socket_write_ready();
-            }
-
-            # dispatch exception conditions
-            foreach my $ready ( @{$ready[2]} ) {
-                my $trans = $this->{_trans_sock_map}->{$ready};
-                $trans->_handle_socket_error_condition();
             }
         }
     }
@@ -227,7 +220,6 @@ sub _init_listen_socket
 
         $this->{_read_fh}->add($socket);
         $this->{_write_fh}->add($socket);
-        $this->{_error_fh}->add($socket);
         $this->{_listen_socket} = $socket;
     };
   croak $@ if $@;
@@ -242,7 +234,6 @@ sub _cleanup
         $socket = $this->{_listen_socket};
         $this->{_read_fh}->remove($socket);
         $this->{_write_fh}->remove($socket);
-        $this->{_error_fh}->remove($socket);
 
         $socket->close();
         $this->{_listen_socket} = undef;
@@ -289,12 +280,10 @@ sub _update_select
         $this->_add_trans_sock($trans, $trans_socket);
         $this->{_read_fh}->add($trans_socket);
         $this->{_write_fh}->add($trans_socket);
-        $this->{_error_fh}->add($trans_socket);
     }
     elsif ( defined($this_socket) && ! defined($trans_socket) ) {
         $this->{_read_fh}->remove($this->{_trans_sock_fh}->{$trans});
         $this->{_write_fh}->remove($this->{_trans_sock_fh}->{$trans});
-        $this->{_error_fh}->remove($this->{_trans_sock_fh}->{$trans});
         $this->_remove_trans_sock($trans);
     }
     elsif ( defined($this_socket) && defined($trans_socket) ) {

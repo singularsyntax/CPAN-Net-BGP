@@ -691,12 +691,6 @@ sub _handle_socket_write_ready
  $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_OPEN);
 }
 
-sub _handle_socket_error_condition
-{
-    my $this = shift();
-    warn "_handle_socket_error_condition()\n" . $this->{_peer_socket}->error(), "\n";
-}
-
 sub _close_session
 {
     my $this = shift();
