@@ -4,6 +4,7 @@ Revision history for Perl extension Net::BGP.
 	- Update documentation and contact email address.
 	- Remove unnecessary error set from select() in Process.pm and
           handling method in Transport.pm.
+	- Add support for external IO::Async event loop.
 
 0.14	2010-09-18
 	- Fix validation of path attribute flags containing extended

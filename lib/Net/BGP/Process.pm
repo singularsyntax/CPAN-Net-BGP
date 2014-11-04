@@ -12,6 +12,10 @@ $VERSION = '0.15';
 ## Module Imports ##
 
 use Carp;
+use Future;
+use IO::Async::Handle;
+use IO::Async::Signal;
+use IO::Async::Timer::Periodic;
 use IO::Select;
 use IO::Socket;
 use Net::BGP::Peer qw( BGP_PORT TRUE FALSE );
@@ -28,16 +32,17 @@ sub new
     my ($arg, $value);
 
     my $this = {
-        _read_fh       => IO::Select->new(),
-        _write_fh      => IO::Select->new(),
-        _peer_list     => {},
-        _peer_addr     => {},
+        _read_fh        => IO::Select->new(),
+        _write_fh       => IO::Select->new(),
+        _peer_list      => {},
+        _peer_addr      => {},
         _trans_sock     => {},
         _trans_sock_fh  => {},
-        _trans_sock_map=> {},
-        _listen_socket => undef,
-        _listen_port   => BGP_PORT,
-        _listen_addr   => INADDR_ANY,
+        _trans_sock_map => {},
+        _listen_socket  => undef,
+        _listen_port    => BGP_PORT,
+        _listen_addr    => INADDR_ANY,
+        _event_loop     => undef
     };
 
     while ( defined($arg = shift()) ) {
@@ -48,12 +53,19 @@ sub new
 	elsif ( $arg =~ /listenaddr/i ) {
             $this->{_listen_addr} = inet_aton($value);
         }
+        elsif ( $arg =~ /eventloop/i ) {
+            $this->{_event_loop} = $value;
+        }
 	else {
 	    croak "Unknown argument '$arg'";
 	}
     }
 
     bless($this, $class);
+
+    if ( defined($this->{_event_loop}) ) {
+        $this->_io_async_init_event_loop();
+    }
 
     return ( $this );
 }
@@ -64,6 +76,10 @@ sub add_peer
 
     $this->{_peer_addr}->{$peer->this_id}->{$peer->peer_id} = $peer if $peer->is_listener;;
     $this->{_peer_list}->{$peer} = $peer;
+
+    if ( defined($this->{_event_loop}) ) {
+        $this->_io_async_init_listen_socket();
+    }
 }
 
 sub remove_peer
@@ -78,9 +94,193 @@ sub remove_peer
         delete $this->{_peer_addr}->{$peer->this_id}->{$peer->peer_id};
         delete $this->{_peer_list}->{$peer};
     }
+
+    # Return from event loop when there are no more peers
+    if ( scalar(keys(%{$this->{_peer_list}})) == 0 ) {
+        $this->{_event_loop}->stop();
+    }
 }
 
 sub event_loop
+{
+    my $this = shift();
+
+    if ( defined($this->{_event_loop}) ) {
+        $this->{_event_loop}->run();
+        return;
+    }
+
+    $this->_io_select_event_loop();
+}
+
+## Private Methods ##
+
+sub _add_trans_sock
+{
+    my ($this, $trans, $sock) = @_;
+
+    $this->{_trans_sock}->{$trans} = $sock;
+    $this->{_trans_sock_fh}->{$trans} = $sock->fileno();
+    $this->{_trans_sock_map}->{$sock} = $trans;
+}
+
+sub _remove_trans_sock
+{
+    my ($this, $trans) = @_;
+
+    delete $this->{_trans_sock_map}->{$this->{_trans_sock}->{$trans}};
+    delete $this->{_trans_sock}->{$trans};
+    delete $this->{_trans_sock_fh}->{$trans};
+}
+
+sub _io_async_event_hook
+{
+    my $this = shift();
+
+    foreach my $peer ( values(%{$this->{_peer_list}}) ) {
+        foreach my $trans ($peer->transports) {
+            $this->_update_select($trans);
+        };
+    }
+}
+
+sub _io_async_init_event_loop
+{
+    my $this = shift();
+
+    # Ignore SIGPIPE
+    my $sigpipe_handler = IO::Async::Signal->new(
+        name => "PIPE",
+        on_receipt => sub {
+            ## IGNORED ##
+        }
+    );
+
+    $this->{_event_loop}->add($sigpipe_handler);
+    $this->{_event_loop}->later(
+        sub {
+            $this->_io_async_event_hook();
+        }
+    );
+}
+
+sub _io_async_init_listen_socket
+{
+    my $this = shift();
+
+    if ( ! defined($this->{_listen_socket}) ) {
+        # Poll each peer and create listen socket if any is a listener
+        foreach my $peer ( values(%{$this->{_peer_list}}) ) {
+            if ( $peer->is_listener() ) {
+                my $listener = IO::Async::Listener->new(
+                    acceptor => sub {
+                        my $trans = $this->_handle_accept();
+
+                        if ( defined($trans) ) {
+                            $this->_io_async_event_hook();
+                            Future->done($trans->_get_socket());
+                        } else {
+                            Future->fail(undef);
+                        }
+                    },
+
+                    on_accept => sub {
+                        my ($listener, $peer_sock) = @_;
+                        my $trans = $this->{_trans_sock_map}->{$peer_sock};
+
+                        $this->{_event_loop}->add(
+                            IO::Async::Handle->new(
+                                handle => $peer_sock,
+
+                                on_read_ready => sub {
+                                    print "on_read_ready\n";
+                                    print join(" ", @_), "\n";
+
+                                    if ( defined($trans) ) {
+                                        $trans->_handle_socket_read_ready();
+                                    }
+                                },
+
+                                on_write_ready => sub {
+                                    print "on_write_ready\n";
+                                    print join(" ", @_), "\n";
+
+                                    if ( defined($trans) ) {
+                                        $trans->_handle_socket_write_ready();
+                                    }
+                                }
+                            )
+                        );
+
+                        my $timer = IO::Async::Timer::Periodic->new(
+                            interval => 30,
+                            on_tick => sub {
+                               $trans->parent()->_update_timers(30);
+                            }
+                        );
+
+                        $timer->start();
+                        $this->{_event_loop}->add($timer);
+                    }
+                );
+
+                $this->_init_listen_socket();
+                $this->{_event_loop}->add($listener);
+
+                $listener->listen(
+                    handle => $this->{_listen_socket}
+                );
+
+                last;
+            }
+        }
+    }
+}
+
+sub _init_listen_socket
+{
+    my $this = shift();
+    my ($socket, $proto, $rv, $sock_addr);
+
+    eval {
+        $socket = IO::Socket->new( Domain => AF_INET );
+        if ( ! defined($socket) ) {
+            die("IO::Socket construction failed");
+        }
+
+        $rv = $socket->blocking(FALSE);
+        if ( ! defined($rv) ) {
+            die("set socket non-blocking failed");
+        }
+
+        $proto = getprotobyname('tcp');
+        $rv = $socket->socket(PF_INET, SOCK_STREAM, $proto);
+        if ( ! defined($rv) ) {
+            die("socket() failed");
+        }
+
+        $socket->sockopt(SO_REUSEADDR, TRUE);
+
+        $sock_addr = sockaddr_in($this->{_listen_port},
+                                 $this->{_listen_addr});
+        $rv = $socket->bind($sock_addr);
+        if ( ! defined($rv) ) {
+            die("bind() failed");
+        }
+
+        $rv = $socket->listen(LISTEN_QUEUE_SIZE);
+        if ( ! defined($rv) ) {
+            die("listen() failed");
+        }
+
+        $this->{_read_fh}->add($socket);
+        $this->{_write_fh}->add($socket);
+        $this->{_listen_socket} = $socket;
+    };
+  croak $@ if $@;
+}
+
+sub _io_select_event_loop
 {
     my $this = shift();
     my ($time, $last_time, $delta, $min, $min_timer);
@@ -162,69 +362,6 @@ sub event_loop
     $SIG{'PIPE'} = $sigorig if defined $sigorig;
 }
 
-## Private Methods ##
-
-sub _add_trans_sock
-{
-    my ($this, $trans, $sock) = @_;
-
-    $this->{_trans_sock}->{$trans} = $sock;
-    $this->{_trans_sock_fh}->{$trans} = $sock->fileno();
-    $this->{_trans_sock_map}->{$sock} = $trans;
-}
-
-sub _remove_trans_sock
-{
-    my ($this, $trans) = @_;
-
-    delete $this->{_trans_sock_map}->{$this->{_trans_sock}->{$trans}};
-    delete $this->{_trans_sock}->{$trans};
-    delete $this->{_trans_sock_fh}->{$trans};
-}
-
-sub _init_listen_socket
-{
-    my $this = shift();
-    my ($socket, $proto, $rv, $sock_addr);
-
-    eval {
-        $socket = IO::Socket->new( Domain => AF_INET );
-        if ( ! defined($socket) ) {
-            die("IO::Socket construction failed");
-        }
-
-        $rv = $socket->blocking(FALSE);
-        if ( ! defined($rv) ) {
-            die("set socket non-blocking failed");
-        }
-
-        $proto = getprotobyname('tcp');
-        $rv = $socket->socket(PF_INET, SOCK_STREAM, $proto);
-        if ( ! defined($rv) ) {
-            die("socket() failed");
-        }
-
-        $socket->sockopt(SO_REUSEADDR, TRUE);
-
-        $sock_addr = sockaddr_in($this->{_listen_port},
-                                 $this->{_listen_addr});
-        $rv = $socket->bind($sock_addr);
-        if ( ! defined($rv) ) {
-            die("bind() failed");
-        }
-
-        $rv = $socket->listen(LISTEN_QUEUE_SIZE);
-        if ( ! defined($rv) ) {
-            die("listen() failed");
-        }
-
-        $this->{_read_fh}->add($socket);
-        $this->{_write_fh}->add($socket);
-        $this->{_listen_socket} = $socket;
-    };
-  croak $@ if $@;
-}
-
 sub _cleanup
 {
     my $this = shift();
@@ -251,6 +388,8 @@ sub _handle_accept
     my $ip_local = inet_ntoa($socket->sockaddr);
 
     my $peer = $this->{_peer_addr}->{$ip_local}->{$ip_addr};
+    my $trans = undef;
+
     if ( ! defined($peer)) {
 	warn "Ignored incoming connection from unknown peer ($ip_addr => $ip_local)\n";
         $socket->close();
@@ -260,13 +399,15 @@ sub _handle_accept
         $socket->close();
     }
     else {
-        my $trans = $peer->transport;
+        $trans = $peer->transport;
 
-        # Can't reuse the existing Net::BGP::Peer object unless it is a passive session
-	$trans = $trans->_clone unless $peer->is_passive();
+        # Can't reuse the existing Transport object unless it is a passive session
+        $trans = $trans->_clone unless $peer->is_passive();
 
-        $trans->_set_socket($socket);
+        $trans->_connected($socket);
     }
+
+    return ( $trans );
 }
 
 sub _update_select
@@ -307,7 +448,8 @@ Net::BGP::Process - Class encapsulating BGP session multiplexing functionality
 
     $bgp = Net::BGP::Process->new(
         Port       => $port,
-        ListenAddr => '1.2.3.4'
+        ListenAddr => '1.2.3.4',
+        EventLoop  => IO::Async::Loop->new()
     );
 
     $bgp->add_peer($peer);
@@ -328,7 +470,11 @@ intends to establish a session with a single peer.
 
 I<new()> - create a new Net::BGP::Process object
 
-    $bgp = Net::BGP::Process->new( Port => $port, ListenAddr => '1.2.3.4' );
+    $bgp = Net::BGP::Process->new(
+        Port       => $port,
+        ListenAddr => '1.2.3.4',
+        EventLoop  => IO::Async::Loop->new()
+    );
 
 This is the constructor for Net::BGP::Process objects. It returns a
 reference to the newly created object. The following named parameters may
@@ -347,6 +493,12 @@ and may be unable to establish a connection to the B<Net::BGP::Process>.
 
 This parameter sets the IP address the BGP process listens on. Defaults
 to INADDR_ANY.
+
+=head2 EventLoop
+
+This parameter sets an B<IO::Async::Loop> object to use as the event loop
+for internal event processing. If omitted, defaults to the legacy B<IO::Select>
+internal event loop. See L<"event_loop()"> method for details on use.
 
 I<add_peer()> - add a new peer to the BGP process
 
@@ -384,10 +536,18 @@ objects remaining under its management, which can only occur if they
 are explicitly removed with the remove_peer() method (perhaps called
 in one of the callback or timer functions).
 
+If an external IO::Async::Loop object has been passed into the constructor,
+calling this method simply delegates to the loop's run() method. However,
+the typical use for an external event loop would be to multiplex several
+asynchonrous, event-driven services, and common practice would be to call
+its run() method directly at some other point in the program after all the
+other services have been added, instead of calling the B<Net::BGP::Process>
+event_loop() method directly.
+
 =head1 SEE ALSO
 
 Net::BGP, Net::BGP::Peer, Net::BGP::Transport, Net::BGP::Update,
-Net::BGP::Refresh, Net::BGP::Notification
+Net::BGP::Refresh, Net::BGP::Notification, IO::Async
 
 =head1 AUTHOR
 

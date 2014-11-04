@@ -1,18 +1,17 @@
 #!/usr/bin/perl
 
 package Net::BGP::Transport;
-use bytes;
 
+use bytes;
 use strict;
-use Errno qw(EAGAIN);
+use Errno qw( EAGAIN );
 use vars qw(
-    $VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS @BGP @GENERIC
-    @BGP_EVENT_MESSAGE_MAP @BGP_EVENTS @BGP_FSM @BGP_STATES
+    $VERSION @ISA @BGP @BGP_EVENT_MESSAGE_MAP @BGP_EVENTS @BGP_FSM @BGP_STATES
 );
 
 ## Inheritance and Versioning ##
 
-@ISA     = qw( Exporter );
+@ISA     = qw( IO::Async::Handle );
 $VERSION = '0.15';
 
 ## General Definitions ##
@@ -191,22 +190,14 @@ sub AWAITING_HEADER_START     { 1 }
 sub AWAITING_HEADER_FRAGMENT  { 2 }
 sub AWAITING_MESSAGE_FRAGMENT { 3 }
 
-## Export Tag Definitions ##
-
-@EXPORT      = ();
-@EXPORT_OK   = ();
-%EXPORT_TAGS = (
-    ALL      => [ @EXPORT, @EXPORT_OK ]
-);
-
 ## Module Imports ##
 
 use Scalar::Util qw( weaken );
-use Errno qw(EINPROGRESS ENOTCONN);
-use Exporter;
+use Errno qw( EINPROGRESS ENOTCONN );
+use IO::Async::Handle;
 use IO::Socket;
 use Carp;
-use Carp qw(cluck);
+use Carp qw( cluck );
 use Net::BGP::Notification qw( :errors );
 use Net::BGP::Refresh;
 use Net::BGP::Update;
@@ -276,6 +267,7 @@ sub new
         _out_msg_buffer        => ''
     };
 
+    $class->SUPER::new();
     bless($this, $class);
 
     while ( defined($arg = shift()) ) {
@@ -377,6 +369,25 @@ sub sibling
     return $this->{_sibling};
 }
 
+## Overrides ##
+
+sub on_read_ready
+{
+    my $this = shift();
+    $this->_handle_socket_read_ready();
+}
+
+sub on_write_ready
+{
+    my $this = shift();
+    $this->_handle_socket_write_ready();
+}
+
+sub on_closed
+{
+    my $this = shift();
+}
+
 ## Private Class Methods ##
 
 sub _clone
@@ -431,6 +442,15 @@ sub _error
         ErrorSubCode => shift() || BGP_ERROR_SUBCODE_NULL,
         ErrorData    => shift()
     );
+}
+
+sub _connected
+{
+    my ($this, $socket) = @_;
+
+    $this->_set_socket($socket);
+    $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_OPEN);
+    $this->_handle_pending_events();
 }
 
 sub _is_connected
@@ -681,14 +701,13 @@ sub _handle_socket_read_ready
     if ( $conn_closed ) {
      $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_CLOSED);
     }
+
+    $this->_handle_pending_events();
 }
 
 sub _handle_socket_write_ready
 {
- my $this = shift();
- return unless defined($this->{_peer_socket}); # Might have been closed by _handle_socket_read_ready!
- $this->{_peer_socket_connected} = TRUE;
- $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_OPEN);
+    my $this = shift();
 }
 
 sub _close_session
