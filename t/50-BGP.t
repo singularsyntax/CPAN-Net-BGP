@@ -134,6 +134,15 @@ ok($shutaok == 2,'Shutdown active');
 ok($timerok == 2,'Timer');
 
 
+$bgp->add_peer($active);
+$bgp->add_peer($listen);
+ok(scalar($bgp->peers()) == 2, 'Two peers');
+
+$bgp->remove_peer($active);
+$bgp->remove_peer($listen);
+ok(scalar($bgp->peers()) == 0, 'No peers');
+
+
 ## End of test script - Functions below ##
 
 sub opencallback

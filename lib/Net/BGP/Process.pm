@@ -101,6 +101,11 @@ sub remove_peer
     }
 }
 
+sub peers
+{
+    return values(%{shift()->{_peer_list}});
+}
+
 sub event_loop
 {
     my $this = shift();
@@ -454,6 +459,9 @@ Net::BGP::Process - Class encapsulating BGP session multiplexing functionality
 
     $bgp->add_peer($peer);
     $bgp->remove_peer($peer);
+
+    @peers = $bgp->peers();
+
     $bgp->event_loop();
 
 =head1 DESCRIPTION
@@ -519,6 +527,11 @@ BGP process, for example, if the session is broken or closed and will not
 be re-established. The method accepts a single parameter, which is a
 reference to a Net::BGP::Peer object which has previously been registered
 with the process object with the add_peer() method.
+
+I<peers()> - list peers registered with the BGP process
+
+This method returns an array of the B<Net::BGP::Peer> objects registered
+with the BGP process.
 
 I<event_loop()> - start the process event loop
 
