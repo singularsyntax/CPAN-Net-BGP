@@ -97,7 +97,9 @@ sub remove_peer
 
     # Return from event loop when there are no more peers
     if ( scalar(keys(%{$this->{_peer_list}})) == 0 ) {
-        $this->{_event_loop}->stop();
+        if ( scalar($this->{_event_loop}->notifiers()) == 0 ) {
+            $this->{_event_loop}->stop();
+        }
     }
 }
 
