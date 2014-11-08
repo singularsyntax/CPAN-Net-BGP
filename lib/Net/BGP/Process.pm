@@ -187,7 +187,7 @@ sub _io_async_init_listen_socket
                             $this->_io_async_event_hook();
                             Future->done($trans->_get_socket());
                         } else {
-                            Future->fail(undef);
+                            Future->fail($!);
                         }
                     },
 
