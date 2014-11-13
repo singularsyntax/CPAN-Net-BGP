@@ -356,16 +356,11 @@ sub refresh
     return $result;
 }
 
-sub parent
-{
-    return shift->{_parent};
-}
-
 sub sibling
 {
     my $this = shift();
     return undef unless defined $this->{_sibling};
-    return undef unless $this->parent->transport eq $this;
+    return undef unless $this->_parent->transport eq $this;
     return $this->{_sibling};
 }
 
@@ -389,6 +384,11 @@ sub on_closed
 }
 
 ## Private Class Methods ##
+
+sub _parent
+{
+    return shift->{_parent};
+}
 
 sub _clone
 {
@@ -533,13 +533,13 @@ sub _handle_event
         {
             ## session has terminated
             ##
-            $this->parent->reset_callback(undef)
+            $this->_parent->reset_callback(undef)
         }
         elsif ( $next_state == BGP_STATE_ESTABLISHED )
         {
             ## newly established session
             ##
-            $this->parent->refresh_callback(undef);
+            $this->_parent->refresh_callback(undef);
         }
     }
 }
@@ -607,7 +607,7 @@ sub _send_msg
 
     unless (defined $this->{_peer_socket}) {
         return if $oktofail;
-        cluck $this->parent->asstring . ": Internal error - no _peer_socket - Connection is shutdown\n";
+        cluck $this->_parent->asstring . ": Internal error - no _peer_socket - Connection is shutdown\n";
         $this->_cease;
         return;
     }
@@ -618,7 +618,7 @@ sub _send_msg
     if ( ! defined($sent) ) {
         return if $oktofail; # In a _cease process - Don't complain...
 	if ($!{EAGAIN} == 0) {
-	    warn $this->parent->asstring . ": Error on socket write: $! - Connection is shutdown\n";
+	    warn $this->_parent->asstring . ": Error on socket write: $! - Connection is shutdown\n";
             $this->_cease;
 	}
         return;
@@ -634,7 +634,7 @@ sub _handle_socket_read_ready
     my $socket = $this->{_peer_socket};
 
     unless (defined $socket) {
-      warn $this->parent->asstring . ": Connection lost - Connection is formaly shutdown now\n";
+      warn $this->_parent->asstring . ": Connection lost - Connection is formaly shutdown now\n";
       $this->_cease;
       return;
     }
@@ -748,7 +748,7 @@ sub _kill_session
     };
 
     # invoke user callback function
-    $this->parent->error_callback($error);
+    $this->_parent->error_callback($error);
 }
 
 sub _ignore_start_event
@@ -767,7 +767,7 @@ sub _handle_receive_keepalive_message
     }
 
     # invoke user callback function
-    $this->parent->keepalive_callback();
+    $this->_parent->keepalive_callback();
 
     return ( BGP_STATE_ESTABLISHED );
 }
@@ -786,7 +786,7 @@ sub _handle_receive_update_message
     $update = Net::BGP::Update->_new_from_msg($buffer);
 
     # invoke user callback function
-    $this->parent->update_callback($update);
+    $this->_parent->update_callback($update);
 
     return ( BGP_STATE_ESTABLISHED );
 }
@@ -804,14 +804,14 @@ sub _handle_receive_refresh_message
     $buffer = $this->_dequeue_message();
     $refresh = Net::BGP::Refresh->_new_from_msg($buffer);
 
-    unless ( $this->parent->this_can_refresh ) {
+    unless ( $this->_parent->this_can_refresh ) {
         Net::BGP::Notification->throw(
             ErrorCode => BGP_ERROR_CODE_FINITE_STATE_MACHINE
         );
     }
 
     # invoke user callback function
-    $this->parent->refresh_callback($refresh);
+    $this->_parent->refresh_callback($refresh);
 
     return ( BGP_STATE_ESTABLISHED );
 }
@@ -825,7 +825,7 @@ sub _handle_receive_notification_message
     $this->_close_session();
 
     # invoke user callback function
-    $this->parent->notification_callback($error);
+    $this->_parent->notification_callback($error);
 
     return ( BGP_STATE_IDLE );
 }
@@ -878,7 +878,7 @@ sub _handle_collision_selfdestuct
 {
     my $this = shift;
     $this->stop();
-    $this->parent->transport($this->{_sibling});
+    $this->_parent->transport($this->{_sibling});
     $this->{_sibling}->{_sibling} = undef;
 }
 
@@ -897,8 +897,8 @@ sub _handle_bgp_open_received
         if ( ($this->{_sibling}->{_fsm_state} == BGP_STATE_OPEN_SENT) ||
              ($this->{_sibling}->{_fsm_state} == BGP_STATE_OPEN_CONFIRM) ) {
 
-            $this_id = unpack('N', inet_aton($this->parent->this_id));
-            $peer_id = unpack('N', inet_aton($this->parent->peer_id));
+            $this_id = unpack('N', inet_aton($this->_parent->this_id));
+            $peer_id = unpack('N', inet_aton($this->_parent->peer_id));
 
             if ( $this_id < $peer_id ) {
 		$this->_handle_collision_selfdestuct;
@@ -931,7 +931,7 @@ sub _handle_bgp_open_received
     }
 
     # invoke user callback function
-    $this->parent->open_callback();
+    $this->_parent->open_callback();
 
     # transition to state OpenConfirm
     return ( BGP_STATE_OPEN_CONFIRM );
@@ -961,12 +961,12 @@ sub _handle_bgp_start_event
     my ($socket, $proto, $remote_addr, $this_addr, $rv);
 
     # initialize ConnectRetry timer
-    if ( ! $this->parent->is_passive ) {
+    if ( ! $this->_parent->is_passive ) {
         $this->{_connect_retry_timer} = $this->{_connect_retry_time};
     }
 
     # initiate the TCP transport connection
-    if ( ! $this->parent->is_passive ) {
+    if ( ! $this->_parent->is_passive ) {
         eval {
             $socket = IO::Socket->new( Domain => AF_INET );
             if ( ! defined($socket) ) {
@@ -979,7 +979,7 @@ sub _handle_bgp_start_event
                 die("socket() failed");
             }
 
-            $this_addr = sockaddr_in(0, inet_aton($this->parent->this_id));
+            $this_addr = sockaddr_in(0, inet_aton($this->_parent->this_id));
             $rv = $socket->bind($this_addr);
             if ( ! $rv ) {
                 die("bind() failed");
@@ -990,7 +990,7 @@ sub _handle_bgp_start_event
                 die("set socket non-blocking failed");
             }
 
-            $remote_addr = sockaddr_in($this->parent->peer_port, inet_aton($this->parent->peer_id));
+            $remote_addr = sockaddr_in($this->_parent->peer_port, inet_aton($this->_parent->peer_id));
             $rv = $socket->connect($remote_addr);
             if ( ! defined($rv) ) {
                 die "OK - but connect() failed: $!" unless ($! == EINPROGRESS);
@@ -1030,7 +1030,7 @@ sub _cease
     my $this = shift();
 
     if ( $this->{_fsm_state} == BGP_STATE_ESTABLISHED ) {
-	$this->parent->reset_callback();
+	$this->_parent->reset_callback();
     }
 
     my $error = Net::BGP::Notification->new( ErrorCode => BGP_ERROR_CODE_CEASE );
@@ -1135,17 +1135,17 @@ sub _encode_bgp_open_message
 
     # encode optional parameters and length (only refresh supported)
     my $opt = '';
-    $opt .= pack('cc',2,0) if $this->parent->this_can_refresh;
+    $opt .= pack('cc',2,0) if $this->_parent->this_can_refresh;
     $buffer = pack('C', length($opt)) . $opt;
 
     # encode BGP Identifier field
-    $buffer = inet_aton($this->parent->this_id) . $buffer;
+    $buffer = inet_aton($this->_parent->this_id) . $buffer;
 
     # encode Hold Time
     $buffer = pack('n', $this->{_hold_time}) . $buffer;
 
     # encode local Autonomous System number
-    $buffer = pack('n', $this->parent->this_as) . $buffer;
+    $buffer = pack('n', $this->_parent->this_as) . $buffer;
 
     # encode BGP version
     $buffer = pack('C', $this->{_bgp_version}) . $buffer;
@@ -1170,7 +1170,7 @@ sub _decode_bgp_open_message
 
     # decode and validate remote Autonomous System number
     $as = unpack('n', substr($buffer, 1, 2));
-    if ( $as != $this->parent->peer_as ) {
+    if ( $as != $this->_parent->peer_as ) {
         $this->_error(BGP_ERROR_CODE_OPEN_MESSAGE,
                       BGP_ERROR_SUBCODE_BAD_PEER_AS);
     }
