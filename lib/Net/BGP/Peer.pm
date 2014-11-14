@@ -446,32 +446,10 @@ sub error_callback
 
 ## Private Object Methods ##
 
-sub _update_timers
+sub _passive_transport
 {
-    my ($this, $delta) = @_;
-
-    # Proxy for transport timers
-    my $min_time = $this->transport->_update_timers($delta);
- 
-    # Update user defined timers
-    foreach my $key ( keys(%{$this->{_user_timers}}) ) {
-        my $timer = $this->{_user_timers}->{$key};
-        if ( defined($timer->{_timer}) ) {
-            $timer->{_timer} -= $delta;
-
-            if ( $timer->{_timer} <= 0 ) {
-                $timer->{_timer} = $timer->{_timeout};
-                &{ $timer->{_callback} }($this);
-            }
-
-            my $min = ($timer->{_timer} < 0) ? 0 : $timer->{_timer};
-            if ( $min < $min_time ) {
-                $min_time = $min;
-            }
-        }
-    }
-
-    return ( $min_time );
+    my $this = shift();
+    return $this->is_passive() ? $this->{_transport} : $this->{_transport}->clone();
 }
 
 ## POD ##

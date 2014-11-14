@@ -12,16 +12,13 @@ $VERSION = '0.15';
 ## Module Imports ##
 
 use Carp;
-use Future;
-use IO::Async::Handle;
 use IO::Async::Signal;
 use IO::Async::Timer::Periodic;
-use IO::Select;
-use IO::Socket;
 use Net::BGP::Peer qw( BGP_PORT TRUE FALSE );
 
 ## Socket Constants ##
 
+sub INADDR_ANY { '0.0.0.0' }
 sub LISTEN_QUEUE_SIZE { 5 }
 
 ## Public Methods ##
@@ -32,17 +29,12 @@ sub new
     my ($arg, $value);
 
     my $this = {
-        _read_fh        => IO::Select->new(),
-        _write_fh       => IO::Select->new(),
-        _peer_list      => {},
-        _peer_addr      => {},
-        _trans_sock     => {},
-        _trans_sock_fh  => {},
-        _trans_sock_map => {},
-        _listen_socket  => undef,
-        _listen_port    => BGP_PORT,
+        _event_loop     => undef,
+        _listener       => undef,
         _listen_addr    => INADDR_ANY,
-        _event_loop     => undef
+        _listen_port    => BGP_PORT,
+        _peer_addr      => {},
+        _peer_list      => {}
     };
 
     while ( defined($arg = shift()) ) {
@@ -63,9 +55,7 @@ sub new
 
     bless($this, $class);
 
-    if ( defined($this->{_event_loop}) ) {
-        $this->_io_async_init_event_loop();
-    }
+    $this->_io_async_init_event_loop();
 
     return ( $this );
 }
@@ -74,26 +64,26 @@ sub add_peer
 {
     my ($this, $peer) = @_;
 
-    $this->{_peer_addr}->{$peer->this_id}->{$peer->peer_id} = $peer if $peer->is_listener;;
+    $this->{_peer_addr}->{$peer->this_id}->{$peer->peer_id} = $peer if $peer->is_listener;
     $this->{_peer_list}->{$peer} = $peer;
 
     if ( defined($this->{_event_loop}) ) {
         $this->_io_async_init_listen_socket();
+        $this->_attach_transport($peer->transport());
     }
 }
 
 sub remove_peer
 {
     my ($this, $peer) = @_;
+
     if ( defined($this->{_peer_list}->{$peer}) ) {
         $peer->stop();
-	foreach my $trans ($peer->transports)
-         {
-          $this->_update_select($trans);
-         };
         delete $this->{_peer_addr}->{$peer->this_id}->{$peer->peer_id};
         delete $this->{_peer_list}->{$peer};
     }
+
+    $this->_detach_transport($peer->transport());
 
     # Return from event loop when there are no more peers
     if ( scalar(keys(%{$this->{_peer_list}})) == 0 ) {
@@ -112,48 +102,19 @@ sub event_loop
 {
     my $this = shift();
 
-    if ( defined($this->{_event_loop}) ) {
-        $this->{_event_loop}->run();
-        return;
-    }
-
-    $this->_io_select_event_loop();
+    $this->{_event_loop}->run();
+    $this->_cleanup();
 }
 
 ## Private Methods ##
 
-sub _add_trans_sock
-{
-    my ($this, $trans, $sock) = @_;
-
-    $this->{_trans_sock}->{$trans} = $sock;
-    $this->{_trans_sock_fh}->{$trans} = $sock->fileno();
-    $this->{_trans_sock_map}->{$sock} = $trans;
-}
-
-sub _remove_trans_sock
-{
-    my ($this, $trans) = @_;
-
-    delete $this->{_trans_sock_map}->{$this->{_trans_sock}->{$trans}};
-    delete $this->{_trans_sock}->{$trans};
-    delete $this->{_trans_sock_fh}->{$trans};
-}
-
-sub _io_async_event_hook
-{
-    my $this = shift();
-
-    foreach my $peer ( values(%{$this->{_peer_list}}) ) {
-        foreach my $trans ($peer->transports) {
-            $this->_update_select($trans);
-        };
-    }
-}
-
 sub _io_async_init_event_loop
 {
     my $this = shift();
+
+    if ( ! defined($this->{_event_loop})) {
+        $this->{_event_loop} = IO::Async::Loop->new();
+    }
 
     # Ignore SIGPIPE
     my $sigpipe_handler = IO::Async::Signal->new(
@@ -164,78 +125,45 @@ sub _io_async_init_event_loop
     );
 
     $this->{_event_loop}->add($sigpipe_handler);
-    $this->{_event_loop}->later(
-        sub {
-            $this->_io_async_event_hook();
-        }
-    );
 }
 
 sub _io_async_init_listen_socket
 {
     my $this = shift();
 
-    if ( ! defined($this->{_listen_socket}) ) {
+    if ( ! defined($this->{_listener}) ) {
         # Poll each peer and create listen socket if any is a listener
         foreach my $peer ( values(%{$this->{_peer_list}}) ) {
             if ( $peer->is_listener() ) {
                 my $listener = IO::Async::Listener->new(
-                    acceptor => sub {
-                        my $trans = $this->_handle_accept();
-
-                        if ( defined($trans) ) {
-                            $this->_io_async_event_hook();
-                            Future->done($trans->_get_socket());
-                        } else {
-                            Future->fail($!);
-                        }
-                    },
 
                     on_accept => sub {
-                        my ($listener, $peer_sock) = @_;
-                        my $trans = $this->{_trans_sock_map}->{$peer_sock};
+                        my ($listener, $socket) = @_;
+                        my $transport = $this->_get_peer_transport($socket);
 
-                        $this->{_event_loop}->add(
-                            IO::Async::Handle->new(
-                                handle => $peer_sock,
-
-                                on_read_ready => sub {
-                                    print "on_read_ready\n";
-                                    print join(" ", @_), "\n";
-
-                                    if ( defined($trans) ) {
-                                        $trans->_handle_socket_read_ready();
-                                    }
-                                },
-
-                                on_write_ready => sub {
-                                    print "on_write_ready\n";
-                                    print join(" ", @_), "\n";
-
-                                    if ( defined($trans) ) {
-                                        $trans->_handle_socket_write_ready();
-                                    }
-                                }
-                            )
-                        );
-
-                        my $timer = IO::Async::Timer::Periodic->new(
-                            interval => 30,
-                            on_tick => sub {
-                               $trans->parent()->_update_timers(30);
-                            }
-                        );
-
-                        $timer->start();
-                        $this->{_event_loop}->add($timer);
+                        if ( defined($transport) ) {
+                            $this->_attach_transport($transport);
+                        }
                     }
                 );
 
-                $this->_init_listen_socket();
+                $this->{_listener} = $listener;
                 $this->{_event_loop}->add($listener);
 
                 $listener->listen(
-                    handle => $this->{_listen_socket}
+                    addr => {
+                        family   => "inet",
+                        socktype => "stream",
+                        port     => $this->{_listen_port},
+                        ip       => $this->{_listen_addr}
+                    },
+
+                    queuesize => LISTEN_QUEUE_SIZE,
+                    reuseaddr => TRUE,
+
+                    on_listen_error => sub {
+                        croak("on_listen_error(): ", shift());
+                    }
                 );
 
                 last;
@@ -244,201 +172,66 @@ sub _io_async_init_listen_socket
     }
 }
 
-sub _init_listen_socket
-{
-    my $this = shift();
-    my ($socket, $proto, $rv, $sock_addr);
+# Socket Init
+#
+# - set non-blocking
 
-    eval {
-        $socket = IO::Socket->new( Domain => AF_INET );
-        if ( ! defined($socket) ) {
-            die("IO::Socket construction failed");
-        }
-
-        $rv = $socket->blocking(FALSE);
-        if ( ! defined($rv) ) {
-            die("set socket non-blocking failed");
-        }
-
-        $proto = getprotobyname('tcp');
-        $rv = $socket->socket(PF_INET, SOCK_STREAM, $proto);
-        if ( ! defined($rv) ) {
-            die("socket() failed");
-        }
-
-        $socket->sockopt(SO_REUSEADDR, TRUE);
-
-        $sock_addr = sockaddr_in($this->{_listen_port},
-                                 $this->{_listen_addr});
-        $rv = $socket->bind($sock_addr);
-        if ( ! defined($rv) ) {
-            die("bind() failed");
-        }
-
-        $rv = $socket->listen(LISTEN_QUEUE_SIZE);
-        if ( ! defined($rv) ) {
-            die("listen() failed");
-        }
-
-        $this->{_read_fh}->add($socket);
-        $this->{_write_fh}->add($socket);
-        $this->{_listen_socket} = $socket;
-    };
-  croak $@ if $@;
-}
-
-sub _io_select_event_loop
-{
-    my $this = shift();
-    my ($time, $last_time, $delta, $min, $min_timer);
-    my ($timer);
-
-    my $sigorig = $SIG{'PIPE'};
-    unless (defined $SIG{'PIPE'}) {
-      $SIG{'PIPE'} = 'IGNORE';
-    }
-
-    # Poll each peer and create listen socket if any is a listener
-    foreach my $peer ( values(%{$this->{_peer_list}}) ) {
-        if ( $peer->is_listener() ) {
-            $this->_init_listen_socket();
-            last;
-        }
-    }
-
-    while ( scalar(keys(%{$this->{_peer_list}})) ) {
-
-        # Process timeouts, events, etc.
-        $min_timer = 2147483647;
-        $time = time();
-
-        if ( ! defined($last_time) ) {
-            $last_time = $time;
-        }
-
-        $delta = $time - $last_time;
-        $last_time = $time;
-
-        foreach my $peer ( values(%{$this->{_peer_list}}) ) {
-
-	    foreach my $trans ($peer->transports) {
-              $trans->_handle_pending_events();
-            }
-
-            $min = $peer->_update_timers($delta);
-            if ( $min < $min_timer ) {
-                $min_timer = $min;
-            }
-
-	    foreach my $trans ($peer->transports)
-             {
-              $this->_update_select($trans);
-             };
-        }
-
-        last if scalar(keys(%{$this->{_peer_list}})) == 0;
-
-	$! = 0;
-
-        my @ready = IO::Select->select($this->{_read_fh}, $this->{_write_fh}, undef, $min_timer);
-
-        if ( @ready ) {
-
-            # dispatch ready to reads
-            foreach my $ready ( @{$ready[0]} ) {
-                if ( $ready == $this->{_listen_socket} ) {
-                    $this->_handle_accept();
-                }
-                else {
-                    my $trans = $this->{_trans_sock_map}->{$ready};
-                    $trans->_handle_socket_read_ready();
-                }
-            }
-
-            # dispatch ready to writes
-            foreach my $ready ( @{$ready[1]} ) {
-                my $trans = $this->{_trans_sock_map}->{$ready};
-                $trans->_handle_socket_write_ready();
-            }
-        }
-    }
-
-    $this->_cleanup();
-
-    delete $SIG{'PIPE'};
-    $SIG{'PIPE'} = $sigorig if defined $sigorig;
-}
+# Event Loop
+#
+# - remove SIGPIPE handler on event loop exit
 
 sub _cleanup
 {
     my $this = shift();
-    my $socket;
 
-    if ( defined($this->{_listen_socket}) ) {
-        $socket = $this->{_listen_socket};
-        $this->{_read_fh}->remove($socket);
-        $this->{_write_fh}->remove($socket);
-
-        $socket->close();
-        $this->{_listen_socket} = undef;
+    if ( defined($this->{_listener}) ) {
+        $this->{_listener}->close();
+        $this->{_listener} = undef;
     }
 }
 
-sub _handle_accept
+sub _get_peer_transport
 {
-    my $this = shift;
+    my ($this, $socket) = @_;
+    my $sock_host = $socket->sockhost();
+    my $peer_host = $socket->peerhost();
+    my $peer = $this->{_peer_addr}->{$sock_host}->{$peer_host};
+    my $transport = undef;
 
-    my ($socket, $peer_addr) = $this->{_listen_socket}->accept();
-    my ($port, $addr) = sockaddr_in($peer_addr);
-    
-    my $ip_addr = inet_ntoa($addr);
-    my $ip_local = inet_ntoa($socket->sockaddr);
-
-    my $peer = $this->{_peer_addr}->{$ip_local}->{$ip_addr};
-    my $trans = undef;
-
-    if ( ! defined($peer)) {
-	warn "Ignored incoming connection from unknown peer ($ip_addr => $ip_local)\n";
+    if ( ! defined($peer) ) {
+        carp("Ignored incoming connection from unknown peer ($peer_host => $sock_host)");
         $socket->close();
-    }
-    elsif ( ! $peer->is_listener() ) {
-	warn "Ignored incoming connection for non-listning peer\n";
+    } elsif ( ! $peer->is_listener() ) {
+        carp("Ignored incoming connection for non-listening peer ($peer_host => $sock_host)");
         $socket->close();
-    }
-    else {
-        $trans = $peer->transport;
-
-        # Can't reuse the existing Transport object unless it is a passive session
-        $trans = $trans->_clone unless $peer->is_passive();
-
-        $trans->_connected($socket);
+    } else {
+        $transport = $peer->_passive_transport();
+        $transport->_connected($socket);
     }
 
-    return ( $trans );
+    return $transport;
 }
 
-sub _update_select
+sub _attach_transport
 {
-    my ($this, $trans) = @_;
+    my ($this, $transport) = @_;
 
-    my $trans_socket = $trans->_get_socket();
-    my $this_socket = $this->{_trans_sock}->{$trans};
+    $this->{_event_loop}->add($transport);
+    $this->{_event_loop}->add($transport->{_connect_retry_timer});
+    $this->{_event_loop}->add($transport->{_hold_timer});
+    $this->{_event_loop}->add($transport->{_keep_alive_timer});
 
-    if ( defined($trans_socket) && ! defined($this_socket) ) {
-        $this->_add_trans_sock($trans, $trans_socket);
-        $this->{_read_fh}->add($trans_socket);
-        $this->{_write_fh}->add($trans_socket);
-    }
-    elsif ( defined($this_socket) && ! defined($trans_socket) ) {
-        $this->{_read_fh}->remove($this->{_trans_sock_fh}->{$trans});
-        $this->{_write_fh}->remove($this->{_trans_sock_fh}->{$trans});
-        $this->_remove_trans_sock($trans);
-    }
-    elsif ( defined($this_socket) && defined($trans_socket) ) {
-        if ( $trans->_is_connected() && $this->{_write_fh}->exists($this_socket) ) {
-            $this->{_write_fh}->remove($this_socket);
-        }
-    }
+    $transport->_handle_pending_events();
+}
+
+sub _detach_transport
+{
+    my ($this, $transport) = @_;
+
+    $this->{_event_loop}->remove($transport->{_connect_retry_timer});
+    $this->{_event_loop}->remove($transport->{_hold_timer});
+    $this->{_event_loop}->remove($transport->{_keep_alive_timer});
+    $this->{_event_loop}->remove($transport);
 }
 
 ## POD ##

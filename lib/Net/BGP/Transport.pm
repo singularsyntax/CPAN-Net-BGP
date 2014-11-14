@@ -195,6 +195,7 @@ sub AWAITING_MESSAGE_FRAGMENT { 3 }
 use Scalar::Util qw( weaken );
 use Errno qw( EINPROGRESS ENOTCONN );
 use IO::Async::Handle;
+use IO::Async::Timer::Countdown;
 use IO::Socket;
 use Carp;
 use Carp qw( cluck );
@@ -293,6 +294,10 @@ sub new
         }
     }
 
+    $this->{_connect_retry_timer} = $this->_init_timer($this->{_connect_retry_time}, BGP_EVENT_CONNECT_RETRY_TIMER_EXPIRED);
+    $this->{_hold_timer} = $this->_init_timer($this->{_hold_time}, BGP_EVENT_HOLD_TIMER_EXPIRED);
+    $this->{_keep_alive_timer} = $this->_init_timer($this->{_keep_alive_time}, BGP_EVENT_KEEPALIVE_TIMER_EXPIRED);
+
     return ( $this );
 }
 
@@ -302,6 +307,7 @@ sub start
 {
     my $this = shift();
     $this->_enqueue_event(BGP_EVENT_START);
+    $this->_handle_pending_events();
 }
 
 sub stop
@@ -381,9 +387,25 @@ sub on_write_ready
 sub on_closed
 {
     my $this = shift();
+
+    $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_CLOSED);
+    $this->_handle_pending_events();
 }
 
 ## Private Class Methods ##
+
+sub _init_timer
+{
+    my ($this, $timeout, $event) = @_;
+
+    return IO::Async::Timer::Countdown->new(
+        delay => $timeout,
+        on_expire => sub {
+            $this->_enqueue_event($event);
+            $this->_handle_pending_events();
+        }
+    );
+}
 
 sub _parent
 {
@@ -406,14 +428,14 @@ sub _clone
     # override some of the inherited properties
     $clone->{_peer_refresh}         = FALSE;
     $clone->{_peer_annonced_id}     = undef;
-    $clone->{_hold_timer}           = undef;
-    $clone->{_keep_alive_timer}     = undef;
+    $clone->{_hold_timer}           = $this->_init_timer($this->{_hold_time}, BGP_EVENT_HOLD_TIMER_EXPIRED);
+    $clone->{_keep_alive_timer}     = $this->_init_timer($this->{_keep_alive_time}, BGP_EVENT_KEEPALIVE_TIMER_EXPIRED);
     $clone->{_fsm_state}            = BGP_STATE_CONNECT;
     $clone->{_event_queue}          = [];
     $clone->{_message_queue}        = [];
     $clone->{_peer_socket}          = undef;
     $clone->{_peer_socket_connected}= FALSE;
-    $clone->{_connect_retry_timer}  = undef;
+    $clone->{_connect_retry_timer}  = $this->_init_timer($this->{_connect_retry_time}, BGP_EVENT_CONNECT_RETRY_TIMER_EXPIRED);
     $clone->{_last_timer_update}    = undef;
     $clone->{_in_msg_buffer}        = '';
     $clone->{_in_msg_buf_state}     = AWAITING_HEADER_START;
@@ -448,6 +470,7 @@ sub _connected
 {
     my ($this, $socket) = @_;
 
+    $this->set_handle($socket);
     $this->_set_socket($socket);
     $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_OPEN);
     $this->_handle_pending_events();
@@ -549,55 +572,16 @@ sub _handle_pending_events
     my $this = shift();
     my $event;
 
-    # flush the outbound message buffer
-    if ( length($this->{_out_msg_buffer}) ) {
-        $this->_send_msg();
-    }
-
-    while ( defined($event = $this->_dequeue_event()) ) {
-        $this->_handle_event($event);
-    }
-}
-
-sub _update_timers
-{
-    my ($this, $delta) = @_;
-    my ($timer, $key, $min, $min_time);
-    my %timers = (
-        _connect_retry_timer => BGP_EVENT_CONNECT_RETRY_TIMER_EXPIRED,
-        _hold_timer          => BGP_EVENT_HOLD_TIMER_EXPIRED,
-        _keep_alive_timer    => BGP_EVENT_KEEPALIVE_TIMER_EXPIRED
-    );
-
-    $min_time = 3600;
-    if ( length($this->{_out_msg_buffer}) ) {
-        $min_time = 0;
-    }
-
-    # Update BGP timers
-    foreach $timer ( keys(%timers) ) {
-        if ( defined($this->{$timer}) ) {
-            $this->{$timer} -= $delta;
-
-            if ( $this->{$timer} <= 0 ) {
-                $this->{$timer} = 0;
-                $this->_enqueue_event($timers{$timer});
-            }
-
-            if ( $this->{$timer} < $min_time ) {
-                $min_time = $this->{$timer};
-            }
+    if ( defined($this->loop()) ) {
+        # flush the outbound message buffer
+        if ( length($this->{_out_msg_buffer}) ) {
+            $this->_send_msg();
+        }
+    
+        while ( defined($event = $this->_dequeue_event()) ) {
+            $this->_handle_event($event);
         }
     }
-
-    # Got a sibling-child?
-    if (defined $this->sibling)
-     {
-      my $sibmin = $this->sibling->_update_timers($delta);
-      $min_time = $sibmin if $sibmin < $min_time;
-     }
-
-    return $min_time;
 }
 
 sub _send_msg
@@ -724,9 +708,9 @@ sub _close_session
     $this->{_in_msg_buffer} = '';
     $this->{_out_msg_buffer} = '';
     $this->{_in_msg_buf_state} = AWAITING_HEADER_START;
-    $this->{_hold_timer} = undef;
-    $this->{_keep_alive_timer} = undef;
-    $this->{_connect_retry_timer} = undef;
+    $this->{_hold_timer}->stop();
+    $this->{_keep_alive_timer}->stop();
+    $this->{_connect_retry_timer}->stop();
 
     return ( BGP_STATE_IDLE );
 }
@@ -763,7 +747,7 @@ sub _handle_receive_keepalive_message
 
     # restart Hold Timer
     if ( $this->{_hold_time} != 0 ) {
-        $this->{_hold_timer} = $this->{_hold_time};
+        $this->{_hold_timer}->reset();
     }
 
     # invoke user callback function
@@ -779,7 +763,7 @@ sub _handle_receive_update_message
 
     # restart Hold Timer
     if ( $this->{_hold_time} != 0 ) {
-        $this->{_hold_timer} = $this->{_hold_time};
+        $this->{_hold_timer}->reset();
     }
 
     $buffer = $this->_dequeue_message();
@@ -798,7 +782,7 @@ sub _handle_receive_refresh_message
 
     # restart Hold Timer
     if ( $this->{_hold_time} != 0 ) {
-        $this->{_hold_timer} = $this->{_hold_time};
+        $this->{_hold_timer}->reset();
     }
 
     $buffer = $this->_dequeue_message();
@@ -840,7 +824,7 @@ sub _handle_keepalive_expired
     $this->_send_msg($buffer);
 
     # restart KeepAlive timer
-    $this->{_keep_alive_timer} = $this->{_keep_alive_time};
+    $this->{_keep_alive_timer}->start();
 
     return ( $this->{_fsm_state} );
 }
@@ -865,7 +849,7 @@ sub _handle_bgp_conn_open
     my $buffer;
 
     # clear ConnectRetry timer
-    $this->{_connect_retry_timer} = undef;
+    $this->{_connect_retry_timer}->stop();
 
     # send OPEN message to peer
     $buffer = $this->_encode_bgp_open_message();
@@ -926,8 +910,8 @@ sub _handle_bgp_open_received
 
     # set Hold Time and KeepAlive timers
     if ( $this->{_hold_time} != 0 ) {
-        $this->{_hold_timer} = $this->{_hold_time};
-        $this->{_keep_alive_timer} = $this->{_keep_alive_time};
+        $this->{_hold_timer}->start();
+        $this->{_keep_alive_timer}->start();
     }
 
     # invoke user callback function
@@ -950,7 +934,7 @@ sub _handle_connect_retry_restart
     my $this = shift();
 
     # restart ConnectRetry timer
-    $this->{_connect_retry_timer} = $this->{_connect_retry_time};
+    $this->{_connect_retry_timer}->reset();
 
     return ( BGP_STATE_ACTIVE );
 }
@@ -958,62 +942,37 @@ sub _handle_connect_retry_restart
 sub _handle_bgp_start_event
 {
     my $this = shift();
-    my ($socket, $proto, $remote_addr, $this_addr, $rv);
 
-    # initialize ConnectRetry timer
-    if ( ! $this->_parent->is_passive ) {
-        $this->{_connect_retry_timer} = $this->{_connect_retry_time};
-    }
+    # initialize the TCP transport connection and ConnectRetry timer
+    if ( ! $this->_parent()->is_passive() ) {
 
-    # initiate the TCP transport connection
-    if ( ! $this->_parent->is_passive ) {
-        eval {
-            $socket = IO::Socket->new( Domain => AF_INET );
-            if ( ! defined($socket) ) {
-                die("IO::Socket construction failed");
-            }
-
-            $proto = getprotobyname('tcp');
-            $rv = $socket->socket(PF_INET, SOCK_STREAM, $proto);
-            if ( ! defined($rv) ) {
-                die("socket() failed");
-            }
-
-            $this_addr = sockaddr_in(0, inet_aton($this->_parent->this_id));
-            $rv = $socket->bind($this_addr);
-            if ( ! $rv ) {
-                die("bind() failed");
-            }
-
-            $rv = $socket->blocking(FALSE);
-            if ( ! defined($rv) ) {
-                die("set socket non-blocking failed");
-            }
-
-            $remote_addr = sockaddr_in($this->_parent->peer_port, inet_aton($this->_parent->peer_id));
-            $rv = $socket->connect($remote_addr);
-            if ( ! defined($rv) ) {
-                die "OK - but connect() failed: $!" unless ($! == EINPROGRESS);
-            }
-
-            # $rv = $socket->blocking(TRUE);
-            # if ( ! defined($rv) ) {
-            #     die("set socket blocking failed");
-            # }
-        };
-
-        # check for exception in transport initiation
-        if ( $@ ) {
-	    carp $@ unless $@ =~ /^OK/;
-            if ( defined($socket) ) {
-                $socket->close();
-            }
-            $this->{_peer_socket} = $socket = undef;
-            $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_OPEN_FAILED);
-        }
-
-        $this->{_peer_socket} = $socket;
+        $this->{_connect_retry_timer}->start();
         $this->{_peer_socket_connected} = FALSE;
+
+        $this->loop()->connect(
+
+            addr => {
+                family   => 'inet',
+                socktype => 'stream',
+                port     => $this->_parent()->peer_port(),
+                ip       => $this->_parent()->peer_id()
+            },
+
+            on_connected => sub {
+                my $socket = shift();
+
+                $this->set_handle($socket);
+                $this->{_peer_socket} = $socket;
+                $this->{_peer_socket_connected} = TRUE;
+                $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_OPEN);
+                $this->_handle_pending_events();
+            },
+
+            on_connect_error => sub {
+                $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_OPEN_FAILED);
+            }
+
+        );
     }
 
     return ( BGP_STATE_CONNECT );
