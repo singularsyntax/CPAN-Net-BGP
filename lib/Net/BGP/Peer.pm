@@ -449,7 +449,7 @@ sub error_callback
 sub _passive_transport
 {
     my $this = shift();
-    return $this->is_passive() ? $this->{_transport} : $this->{_transport}->clone();
+    return $this->is_passive() ? $this->{_transport} : $this->{_transport}->_clone();
 }
 
 ## POD ##
