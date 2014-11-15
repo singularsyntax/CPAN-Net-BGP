@@ -258,7 +258,6 @@ sub new
         _keep_alive_timer      => undef,
         _connect_retry_time    => BGP_CONNECT_RETRY_TIME,
         _connect_retry_timer   => undef,
-        _last_timer_update     => undef,
         _in_msg_buffer         => '',
         _in_msg_buf_state      => AWAITING_HEADER_START,
         _in_msg_buf_bytes_exp  => 0,
@@ -432,7 +431,6 @@ sub _clone
     $clone->{_event_queue}          = [];
     $clone->{_message_queue}        = [];
     $clone->{_connect_retry_timer}  = $this->_init_timer($this->{_connect_retry_time}, BGP_EVENT_CONNECT_RETRY_TIMER_EXPIRED);
-    $clone->{_last_timer_update}    = undef;
     $clone->{_in_msg_buffer}        = '';
     $clone->{_in_msg_buf_state}     = AWAITING_HEADER_START;
     $clone->{_in_msg_buf_bytes_exp} = 0;
