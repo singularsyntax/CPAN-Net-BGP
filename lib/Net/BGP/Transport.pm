@@ -258,8 +258,6 @@ sub new
         _keep_alive_timer      => undef,
         _connect_retry_time    => BGP_CONNECT_RETRY_TIME,
         _connect_retry_timer   => undef,
-        _peer_socket           => undef,
-	_peer_socket_connected => FALSE, # is AWARE - Not established, not socket->connected!
         _last_timer_update     => undef,
         _in_msg_buffer         => '',
         _in_msg_buf_state      => AWAITING_HEADER_START,
@@ -433,8 +431,6 @@ sub _clone
     $clone->{_fsm_state}            = BGP_STATE_CONNECT;
     $clone->{_event_queue}          = [];
     $clone->{_message_queue}        = [];
-    $clone->{_peer_socket}          = undef;
-    $clone->{_peer_socket_connected}= FALSE;
     $clone->{_connect_retry_timer}  = $this->_init_timer($this->{_connect_retry_time}, BGP_EVENT_CONNECT_RETRY_TIMER_EXPIRED);
     $clone->{_last_timer_update}    = undef;
     $clone->{_in_msg_buffer}        = '';
@@ -471,7 +467,6 @@ sub _connected
     my ($this, $socket) = @_;
 
     $this->set_handle($socket);
-    $this->_set_socket($socket);
     $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_OPEN);
     $this->_handle_pending_events();
 }
@@ -479,20 +474,7 @@ sub _connected
 sub _is_connected
 {
     my $this = shift();
-    return ( $this->{_peer_socket_connected} );
-}
-
-sub _get_socket
-{
-    my $this = shift();
-    return ( $this->{_peer_socket} );
-}
-
-sub _set_socket
-{
-    my ($this, $socket) = @_;
-    $this->{_peer_socket} = $socket;
-    $this->{_peer_socket_connected} = TRUE;
+    return ( $this->read_handle()->connected() );
 }
 
 sub _enqueue_event
@@ -589,15 +571,15 @@ sub _send_msg
     my ($this, $msg, $oktofail) = @_;
 
 
-    unless (defined $this->{_peer_socket}) {
-        return if $oktofail;
-        cluck $this->_parent->asstring . ": Internal error - no _peer_socket - Connection is shutdown\n";
-        $this->_cease;
-        return;
-    }
+#    unless (defined $this->{_peer_socket}) {
+#        return if $oktofail;
+#        cluck $this->_parent->asstring . ": Internal error - no _peer_socket - Connection is shutdown\n";
+#        $this->_cease;
+#        return;
+#    }
 
     my $buffer = $this->{_out_msg_buffer} . $msg;
-    my $sent = $this->{_peer_socket}->syswrite($buffer);
+    my $sent = $this->write_handle()->syswrite($buffer);
 
     if ( ! defined($sent) ) {
         return if $oktofail; # In a _cease process - Don't complain...
@@ -615,7 +597,7 @@ sub _handle_socket_read_ready
 {
     my $this = shift();
 
-    my $socket = $this->{_peer_socket};
+    my $socket = $this->read_handle();
 
     unless (defined $socket) {
       warn $this->_parent->asstring . ": Connection lost - Connection is formaly shutdown now\n";
@@ -630,7 +612,6 @@ sub _handle_socket_read_ready
         my $num_read = $socket->sysread($buffer, BGP_MESSAGE_HEADER_LENGTH, length($buffer));
 
         if ($!) { # Something went wrong with none-blocking connect()
-          $this->{_peer_socket} = $socket = undef;
           $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_OPEN_FAILED);
           return;
         }
@@ -697,14 +678,11 @@ sub _handle_socket_write_ready
 sub _close_session
 {
     my $this = shift();
-    my $socket = $this->{_peer_socket};
 
-    if ( defined($socket) ) {
-        $socket->close();
+    if ( defined($this->read_handle()) ) {
+        $this->close();
     }
 
-    $this->{_peer_socket} = $socket = undef;
-    $this->{_peer_socket_connected} = FALSE;
     $this->{_in_msg_buffer} = '';
     $this->{_out_msg_buffer} = '';
     $this->{_in_msg_buf_state} = AWAITING_HEADER_START;
@@ -720,7 +698,7 @@ sub _kill_session
     my ($this, $error) = @_;
     my $buffer;
 
-    if (defined($this->{_peer_socket})) {
+    if (defined($this->read_handle())) {
       $buffer = $this->_encode_bgp_notification_message(
         $error->error_code(),
         $error->error_subcode(),
@@ -947,7 +925,6 @@ sub _handle_bgp_start_event
     if ( ! $this->_parent()->is_passive() ) {
 
         $this->{_connect_retry_timer}->start();
-        $this->{_peer_socket_connected} = FALSE;
 
         $this->loop()->connect(
 
@@ -962,8 +939,6 @@ sub _handle_bgp_start_event
                 my $socket = shift();
 
                 $this->set_handle($socket);
-                $this->{_peer_socket} = $socket;
-                $this->{_peer_socket_connected} = TRUE;
                 $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_OPEN);
                 $this->_handle_pending_events();
             },
