@@ -6,7 +6,6 @@ use bytes;
 use strict;
 use vars qw(
     $VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS @BGP @GENERIC
-    @BGP_EVENT_MESSAGE_MAP @BGP_EVENTS @BGP_FSM @BGP_STATES
 );
 
 ## Inheritance and Versioning ##
@@ -210,7 +209,7 @@ sub stop
 
 sub state
 {
-    return $BGP_STATES[shift()->transport()->{_fsm_state}];
+    return $Net::BGP::Transport::BGP_STATES[shift()->transport()->{_fsm_state}];
 }
 
 sub version
