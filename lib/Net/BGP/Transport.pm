@@ -381,14 +381,6 @@ sub on_write_ready
     $this->_handle_socket_write_ready();
 }
 
-sub on_closed
-{
-    my $this = shift();
-
-    $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_CLOSED);
-    $this->_handle_pending_events();
-}
-
 ## Private Class Methods ##
 
 sub _init_timer
@@ -413,37 +405,18 @@ sub _clone
 {
     my $this = shift();
 
-    croak 'Cannot have more then one clone at a time!' if defined $this->{_sibling};
+    my $transport = Net::BGP::Transport->new(
+        Start            => ($this->{_fsm_state} != BGP_STATE_IDLE),
+        Parent           => $this->{_parent},
+        ConnectRetryTime => $this->{_connect_retry_time},
+        HoldTime         => $this->{_hold_time},
+        KeepAliveTime    => $this->{_keep_alive_time}
+    );
 
-    my $clone = {};
-    foreach my $key ( keys(%{ $this }) ) {
-        $clone->{$key} = $this->{$key};
-    }
+    $this->{_sibling} = $transport;
+    $transport->{_sibling} = $this;
 
-    bless($clone, ref($this));
-
-    # override some of the inherited properties
-    $clone->{_peer_refresh}         = FALSE;
-    $clone->{_peer_annonced_id}     = undef;
-    $clone->{_hold_timer}           = $this->_init_timer($this->{_hold_time}, BGP_EVENT_HOLD_TIMER_EXPIRED);
-    $clone->{_keep_alive_timer}     = $this->_init_timer($this->{_keep_alive_time}, BGP_EVENT_KEEPALIVE_TIMER_EXPIRED);
-    $clone->{_fsm_state}            = BGP_STATE_CONNECT;
-    $clone->{_event_queue}          = [];
-    $clone->{_message_queue}        = [];
-    $clone->{_connect_retry_timer}  = $this->_init_timer($this->{_connect_retry_time}, BGP_EVENT_CONNECT_RETRY_TIMER_EXPIRED);
-    $clone->{_in_msg_buffer}        = '';
-    $clone->{_in_msg_buf_state}     = AWAITING_HEADER_START;
-    $clone->{_in_msg_buf_bytes_exp} = 0;
-    $clone->{_in_msg_buf_type}      = 0;
-    $clone->{_out_msg_buffer}       = '';
-    $clone->{_sibling}              = $this;
-    $this->{_sibling}               = $clone;
-
-    if ( $this->{_fsm_state} != BGP_STATE_IDLE ) {
-        $clone->start();
-    }
-
-    return $clone;
+    return ( $transport );
 }
 
 ## Private Object Methods ##

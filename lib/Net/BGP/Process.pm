@@ -141,7 +141,7 @@ sub _io_async_init_listen_socket
                         my ($listener, $socket) = @_;
                         my $transport = $this->_get_peer_transport($socket);
 
-                        if ( defined($transport) ) {
+                        if ( (defined($transport)) && (! $transport->{_parent}->is_passive()) ) {
                             $this->_attach_transport($transport);
                         }
                     }
