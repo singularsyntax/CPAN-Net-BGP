@@ -208,6 +208,11 @@ sub stop
      };
 }
 
+sub state
+{
+    return $BGP_STATES[shift()->transport()->{_fsm_state}];
+}
+
 sub version
 {
     return shift->transport->version;
@@ -702,6 +707,11 @@ This method immediately ceases the peering session with the
 peer by sending it a NOTIFICATION message with Error Code
 Cease, closing the transport-layer connection, and entering
 the Idle state.
+
+I<state()> - get the peer BGP finite-state machine state
+
+This method returns the peer BGP state as a string: Idle, Connect,
+Active, OpenSent, OpenConfirm, or Established.
 
 I<update()> - send a BGP UPDATE message to the peer
 
