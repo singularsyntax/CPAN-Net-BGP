@@ -8,6 +8,11 @@ lib/Net/BGP/Process.pm
 lib/Net/BGP/Refresh.pm
 lib/Net/BGP/Transport.pm
 lib/Net/BGP/Update.pm
+lib/Net/BGP/ASPath/AS.pm
+lib/Net/BGP/ASPath/AS_CONFED_SEQUENCE.pm
+lib/Net/BGP/ASPath/AS_CONFED_SET.pm
+lib/Net/BGP/ASPath/AS_SEQUENCE.pm
+lib/Net/BGP/ASPath/AS_SET.pm
 Makefile.PL
 MANIFEST
 META.yml
@@ -21,3 +26,4 @@ t/20-NLRI.t
 t/30-Update.t
 t/31-Refresh.t
 t/50-BGP.t
+t/51-BGP-AS4.t

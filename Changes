@@ -1,5 +1,29 @@
 Revision history for Perl extension Net::BGP.
 
+0.17    2015-01-03
+        Added by Joel Maslak <jmaslak@antelope.net>:
+        - Feature: 32 bit ASN support (both as an old and a new speaker)
+        - Bugfix: Lower four bits of path attribute flags were not being
+          ignored as they should have been (see RFC4271 4.3 which says,
+          "The lower-order four bits of the Attribute Flags octet are
+          unused. They MUST be zero when sent and MUST be ignored when
+          received."
+        - Bugfix: Options to Peer should only match if there are no
+          leading or trailing characters.
+        - Bugfix: ASPath->length() counted elements in AS_SETs, when
+          RFC says an AS_SET = 1 hop.  Also ensured AS_CONFED_* are counted
+          as 0 hops.
+        - Bugfix: Optional Transitive attributes can be expected to have
+          the partial flag bit set when passing through a router that does
+          not know what the attributes mean.  Added logic to handle
+          receiving these.
+        - Spelling: In Transport, _peer_announced_id is spelled right. Old
+          spelling is also retained for compatability.
+        - Bugfix: Documentation indicates Update->new() supports ASPaths in
+          array reference form, but code didn't.  Added support to code for
+          new ASPaths to be specified by array references (they create an
+          AS_SEGMENT now, as expected from docs).
+
 0.16    2014-12-19
         - Add configuration for whether or not to send capability
           announcements
@@ -15,6 +39,7 @@ Revision history for Perl extension Net::BGP.
         - Renamed Refresh to AnnounceRefresh to more accurately reflect
           what it does.  Kept "Refresh" as an alias.
             Added by Joel Maslak <jmaslak@antelope.net>
+
 0.15    2014-12-18
         - Add patch by Stuart Pearlman to fix bug that prevents
           restarting a peer due to messages remaining in the front of

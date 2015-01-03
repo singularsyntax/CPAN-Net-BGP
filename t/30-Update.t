@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 25;
+use Test::More tests => 29;
 
 use Net::BGP::Peer qw( :generic ); # dump_hex
 
@@ -139,6 +139,86 @@ sub notif_msg {
     {
         return $n;
     }
+}
+
+
+# This is a list of array references
+#  The array references contain three elements:
+#   0 -> Raw message (hex byte strings in an array ref)
+#   1 -> Proper AS path to find in the message
+#   2 -> Should encode pass (true if should pass, false if
+#        we expect a failure)
+#   3 -> Description of what this pattern tests
+my @src;
+
+push @src, [
+    [ qw (
+        00 00 00 1D  40 01 01 00  40 02 06 02  02 FD EB 5B
+        A0 40 03 04  0A FF 67 01  C0 11 06 02  01 FA 56 EA
+        00 18 0A 02  01
+    ) ],
+    '65003 4200000000',
+    1,
+    'AS4_PATH without partial set'
+];
+
+push @src, [
+    [ qw (
+        00 00 00 1D  40 01 01 00  40 02 06 02  02 FD EB 5B
+        A0 40 03 04  0A FF 67 01  E0 11 06 02  01 FA 56 EA
+        00 18 0A 02  01
+    ) ],
+    '65003 4200000000',
+    1,
+    'AS4_PATH with partial set'
+];
+
+push @src, [
+    [ qw (
+        00 00 00 1D  40 01 01 00  40 02 06 02  02 FD EB 5B
+        A0 40 03 04  0A FF 67 01  EF 11 06 02  01 FA 56 EA
+        00 18 0A 02  01
+    ) ],
+    '65003 4200000000',
+    1,
+    'AS4_PATH with partial set and bogus reserved flags'
+];
+
+push @src, [
+    [ qw (
+        00 00 00 1D  40 01 01 00  60 02 06 02  02 FD EB 5B
+        A0 40 03 04  0A FF 67 01  EF 11 06 02  01 FA 56 EA
+        00 18 0A 02  01
+    ) ],
+    '65003 4200000000',
+    undef,
+    'Well known attribute with partial set is invalid'
+];
+
+foreach my $ele (@src) {
+    my ($hex, $path, $pass, $desc) = @{$ele};
+
+    my $msg = join('',map { pack('H2',$_); } @{$hex});
+    
+    my $update = eval { Net::BGP::Update->_new_from_msg($msg) };
+    if ($@) {
+        if ($pass) {
+            # We expected a pass
+            my $msg = notif_msg($@);
+            ok(0, "encode (msg $desc) failed: $msg");
+            next;
+        } else {
+            # We expected a fail!
+            ok(1, "encode (msg $desc) failed as expected: $msg");
+            next;
+        }
+    }
+
+    ok(
+        ( $update->as_path->as_string() eq $path ),
+        "$desc AS Path ".($update->as_path->as_string()). " eq $path"
+    );
+
 }
 
 __END__
