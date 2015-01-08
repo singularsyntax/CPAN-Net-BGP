@@ -11,8 +11,8 @@ WriteMakefile(
     'VERSION_FROM'      => 'lib/Net/BGP.pm', # finds $VERSION
     'SIGN'              => 1,
     'PREREQ_PM'         => {
-        'IO::Select'    => 0.01, # TODO
-        'IO::Socket'    => 0.01, # TODO
+        'IO::Select'    => 0,
+        'IO::Socket'    => 0,
         'List::Util'    => 1.01, # Actully Scalar::Util - but no version there!
     },
     'TEST_REQUIRES'     => {
