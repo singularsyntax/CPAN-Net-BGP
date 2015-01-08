@@ -9,10 +9,8 @@ lib/Net/BGP/Refresh.pm
 lib/Net/BGP/Transport.pm
 lib/Net/BGP/Update.pm
 Makefile.PL
-MANIFEST
-META.yml
+MANIFEST			This list of files
 README
-SIGNATURE
 t/00-Signature.t
 t/01-pod.t
 t/10-ASPathSegment.t
