@@ -161,7 +161,7 @@ sub BGP_OPTION_REFRESH       { 2 }
         \&_handle_hold_timer_expired,          # BGP_EVENT_HOLD_TIMER_EXPIRED
         \&_handle_keepalive_expired,           # BGP_EVENT_KEEPALIVE_TIMER_EXPIRED
         undef,                                 # BGP_EVENT_RECEIVE_OPEN_MESSAGE
-        \&_handle_receive_keepalive_message_in_open_confirm, # BGP_EVENT_RECEIVE_KEEP_ALIVE_MESSAGE
+        \&_handle_receive_keepalive_message,   # BGP_EVENT_RECEIVE_KEEP_ALIVE_MESSAGE
         undef,                                 # BGP_EVENT_RECEIVE_UPDATE_MESSAGE
         \&_handle_receive_notification_message,# BGP_EVENT_RECEIVE_NOTIFICATION_MESSAGE
         \&_handle_receive_refresh_message      # BGP_EVENT_RECEIVE_REFRESH_MESSAGE
@@ -521,6 +521,27 @@ sub _handle_event
             ##
             $this->parent->refresh_callback(undef);
         }
+
+        # trigger post-transition actions
+        $this->_trigger_post_transition_action($state, $next_state);
+    }
+}
+
+sub _trigger_post_transition_action
+{
+    my ($this, $pre_state, $pos_state) = @_;
+
+    # TODO:
+    #
+    # This needs to be broken out into a separate table similar to $BGP_FSM
+    # which triggers actions prior to state transition. Or, alternately,
+    # $BGP_FSM could be augmented to have an array of subrefs, one each for the
+    # pre- and post- transition action, rather than the current scalar subref.
+    # But I'm too lazy to refactor the entire table right now, so just handle
+    # the single current use case of firing the ESTABLISHED callback...
+
+    if (($pre_state == BGP_STATE_OPEN_CONFIRM) && ($pos_state == BGP_STATE_ESTABLISHED)) {
+        $this->parent->established_callback();
     }
 }
 
@@ -756,16 +777,6 @@ sub _handle_receive_keepalive_message
 
     # invoke user callback function
     $this->parent->keepalive_callback();
-
-    return ( BGP_STATE_ESTABLISHED );
-}
-
-sub _handle_receive_keepalive_message_in_open_confirm
-{
-    my $this = shift();
-
-    $this->_handle_receive_keepalive_message();
-    $this->parent->established_callback();
 
     return ( BGP_STATE_ESTABLISHED );
 }
