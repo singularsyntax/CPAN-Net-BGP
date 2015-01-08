@@ -16,7 +16,7 @@ use overload
 	'fallback' => 1;
 	# DO NOT OVERLOAD @{} - it's an array - we need this!
 
-$VERSION = '0.07';
+$VERSION = '0.15';
 
 use Net::BGP::Notification qw( :errors );
 

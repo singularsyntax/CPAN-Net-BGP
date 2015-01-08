@@ -7,7 +7,7 @@ use vars qw( $VERSION );
 
 ## Inheritance and Versioning ##
 
-$VERSION = '0.09';
+$VERSION = '0.15';
 
 ## Module Imports ##
 
