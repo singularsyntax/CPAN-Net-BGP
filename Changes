@@ -1,5 +1,40 @@
 Revision history for Perl extension Net::BGP.
 
+0.15    2014-12-18
+        - Add configuration for whether or not to send capability
+          announcements
+            Added by Joel Maslak <jmaslak@antelope.net>
+        - Bugfix - send route refresh optional parameter properly
+            Added by Joel Maslak <jmaslak@antelope.net>
+        - Send Cisco-style route refresh capability (capability code 128)
+            Added by Joel Maslak <jmaslak@antelope.net>
+        - Added ability to send MBGP information (only Unicast IPv4 now)
+          to allow interoperability with devices that won't support route
+          refresh without it.
+            Added by Joel Maslak <jmaslak@antelope.net>
+        - Renamed Refresh to AnnounceRefresh to more accurately reflect
+          what it does.  Kept "Refresh" as an alias.
+            Added by Joel Maslak <jmaslak@antelope.net>
+        - Add patch by Stuart Pearlman to fix bug that prevents
+          restarting a peer due to messages remaining in the front of
+          the message queue.  See
+          https://rt.cpan.org/Public/Ticket/Attachment/WithHeaders/570429
+        - Add support for callback upon transition to established state
+            Added by Joel Maslak <jmaslak@antelope.net>
+        - Mikrotik routers will send non-multihop SYN/SYNACK with different
+          TTLs than the actual OPEN message.  So it's possible to have, with
+          the right misconfiguration (multihop on Perl side, non-multihop on
+          Mikrotik side, more than one hop distance away from each other) to
+          a case where you try to _clone() something that is already _clone-ed.
+          This handles that case properly.
+            Added by Joel Maslak <jmaslak@antelope.net>
+        - Allow paths with > 255 ASes.  Note that there are still some limits
+          that will be hit, but now this should process AS_SEGMENTs longer
+          than 255 properly (without truncating/erroring on the attribute as
+          previous versions did).  This will split long paths into multiple
+          AS_SEGMENTs.
+            Added by Joel Maslak <jmaslak@antelope.net>
+
 0.14	2010-09-18
 	- Fix validation of path attribute flags containing extended
           length attribute.

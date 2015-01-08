@@ -161,7 +161,7 @@ sub BGP_OPTION_REFRESH       { 2 }
         \&_handle_hold_timer_expired,          # BGP_EVENT_HOLD_TIMER_EXPIRED
         \&_handle_keepalive_expired,           # BGP_EVENT_KEEPALIVE_TIMER_EXPIRED
         undef,                                 # BGP_EVENT_RECEIVE_OPEN_MESSAGE
-        \&_handle_receive_keepalive_message,   # BGP_EVENT_RECEIVE_KEEP_ALIVE_MESSAGE
+        \&_handle_receive_keepalive_message_in_open_confirm, # BGP_EVENT_RECEIVE_KEEP_ALIVE_MESSAGE
         undef,                                 # BGP_EVENT_RECEIVE_UPDATE_MESSAGE
         \&_handle_receive_notification_message,# BGP_EVENT_RECEIVE_NOTIFICATION_MESSAGE
         \&_handle_receive_refresh_message      # BGP_EVENT_RECEIVE_REFRESH_MESSAGE
@@ -714,6 +714,7 @@ sub _close_session
     $this->{_hold_timer} = undef;
     $this->{_keep_alive_timer} = undef;
     $this->{_connect_retry_timer} = undef;
+    $this->{_message_queue} = [];
 
     return ( BGP_STATE_IDLE );
 }
@@ -755,6 +756,16 @@ sub _handle_receive_keepalive_message
 
     # invoke user callback function
     $this->parent->keepalive_callback();
+
+    return ( BGP_STATE_ESTABLISHED );
+}
+
+sub _handle_receive_keepalive_message_in_open_confirm
+{
+    my $this = shift();
+
+    $this->_handle_receive_keepalive_message();
+    $this->parent->established_callback();
 
     return ( BGP_STATE_ESTABLISHED );
 }
@@ -809,6 +820,7 @@ sub _handle_receive_notification_message
     my $error;
 
     $error = $this->_decode_bgp_notification_message($this->_dequeue_message());
+
     $this->_close_session();
 
     # invoke user callback function
@@ -1122,7 +1134,20 @@ sub _encode_bgp_open_message
 
     # encode optional parameters and length (only refresh supported)
     my $opt = '';
-    $opt .= pack('cc',2,0) if $this->parent->this_can_refresh;
+
+    if ($this->parent->this_support_capabilities) {
+        # RFC5492
+        # Format is <2> <capability_len> <cap_code> <data_len>
+
+        # Parameter type 2, length 6, capability 1 with a length of 4
+        # Address family 1 (IPv4), reserved bit 0, type 1 (unicast)
+        $opt .= pack('ccccncc',2,6,1,4,1,0,1) if $this->parent->this_can_mbgp;
+
+        # Both the standard (2) and Cisco (128) capabilities are sent
+        $opt .= pack('cccc',2,2,2,0) if $this->parent->this_can_refresh;
+        $opt .= pack('cccc',2,2,128,0) if $this->parent->this_can_refresh;
+    }
+
     $buffer = pack('C', length($opt)) . $opt;
 
     # encode BGP Identifier field

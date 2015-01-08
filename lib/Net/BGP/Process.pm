@@ -272,7 +272,22 @@ sub _handle_accept
         my $trans = $peer->transport;
 
         # Can't reuse the existing Net::BGP::Peer object unless it is a passive session
-	$trans = $trans->_clone unless $peer->is_passive();
+        if (! $peer->is_passive() ) {
+
+            # If there is a sibling, we need to kill it, assuming that there
+            # is a collision here.
+            #
+            # This can happen in a BGP misconfiguration where no OPEN gets
+            # sent by the other end (for instance, the other end is expecting
+            # a smaller bigger TTL, but still listens for BGP and sends SYNACK
+            # packets back - like Mikrotik)
+            if (defined $trans->{_sibling}) {
+                $trans->{_sibling}->_handle_collision_selfdestuct;
+            }
+
+            # Now we can clone
+	    $trans = $trans->_clone;
+        }
 
         $trans->_set_socket($socket);
     }

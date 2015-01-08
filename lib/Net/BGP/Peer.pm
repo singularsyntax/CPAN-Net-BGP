@@ -103,8 +103,11 @@ sub new
         _transport             => undef,
         _listen                => TRUE,
         _passive               => FALSE,
-        _refresh               => FALSE,
+        _announce_refresh      => FALSE,
+        _support_capabilities  => TRUE,
+        _support_mbgp          => TRUE,
         _open_callback         => undef,
+        _established_callback  => undef,
         _keepalive_callback    => undef,
         _update_callback       => undef,
         _refresh_callback      => undef,
@@ -149,11 +152,20 @@ sub new
         elsif ( $arg =~ /refreshcallback/i ) {
             $this->{_refresh_callback} = $value;
         }
-        elsif ( $arg =~ /refresh/i ) {
-            $this->{_refresh} = $value;
+        elsif ( $arg =~ /(announce)?refresh/i ) {
+            $this->{_announce_refresh} = $value;
+        }
+        elsif ( $arg =~ /supportcapabilities/i ) {
+            $this->{_support_capabilities} = $value;
+        }
+        elsif ( $arg =~ /supportmbgp/i ) {
+            $this->{_support_mbgp} = $value;
         }
         elsif ( $arg =~ /opencallback/i ) {
             $this->{_open_callback} = $value;
+        }
+        elsif ( $arg =~ /establishedcallback/i ) {
+            $this->{_established_callback} = $value;
         }
         elsif ( $arg =~ /keepalivecallback/i ) {
             $this->{_keepalive_callback} = $value;
@@ -254,7 +266,19 @@ sub this_as
 sub this_can_refresh
 {
     my $this = shift();
-    return ( $this->{_refresh} );
+    return ( $this->{_announce_refresh} );
+}
+
+sub this_support_capabilities
+{
+    my $this = shift();
+    return ( $this->{_support_capabilities} );
+}
+
+sub this_can_mbgp
+{
+    my $this = shift();
+    return ( $this->{_support_mbgp} );
 }
 
 sub peer_id
@@ -303,6 +327,12 @@ sub set_open_callback
 {
     my ($this, $callback) = @_;
     $this->{_open_callback} = $callback;
+}
+
+sub set_established_callback
+{
+    my ($this, $callback) = @_;
+    $this->{_established_callback} = $callback;
 }
 
 sub set_keepalive_callback
@@ -387,6 +417,15 @@ sub open_callback
 
     if ( defined($this->{_open_callback}) ) {
         &{ $this->{_open_callback} }($this);
+    }
+}
+
+sub established_callback
+{
+    my $this = shift();
+
+    if ( defined($this->{_established_callback}) ) {
+        &{ $this->{_established_callback} }($this);
     }
 }
 
@@ -498,6 +537,9 @@ Net::BGP::Peer - Class encapsulating BGP-4 peering session state and functionali
         KeepAliveTime        => 20,
         Listen               => 0,
         Passive              => 0,
+        AnnounceRefresh      => 1,
+        SupportCapabilities  => 1,
+        SupportMBGP          => 1,
         OpenCallback         => \&my_open_callback,
         KeepaliveCallback    => \&my_keepalive_callback,
         UpdateCallback       => \&my_update_callback,
@@ -520,6 +562,10 @@ Net::BGP::Peer - Class encapsulating BGP-4 peering session state and functionali
     $peer_id = $peer->peer_id();
     $peer_as = $peer->peer_as();
 
+    $i_will  = $peer->this_support_capabilities();
+
+    $i_mbgp  = $peer->this_can_mbgp();
+
     $i_can   = $peer->this_can_refresh();
     $peer_can= $peer->peer_can_refresh();
 
@@ -533,6 +579,7 @@ Net::BGP::Peer - Class encapsulating BGP-4 peering session state and functionali
     $string  = $peer->asstring();
 
     $peer->set_open_callback(\&my_open_callback);
+    $peer->set_established_callback(\&my_established_callback);
     $peer->set_keepalive_callback(\&my_keepalive_callback);
     $peer->set_update_callback(\&my_update_callback);
     $peer->set_notification_callback(\&my_notification_callback);
@@ -637,7 +684,22 @@ connections.
 
 This parameter specifies whether the B<Net::BGP::Peer> will annonce support
 for route refresh ('soft re-configure' as specified by RFC 2918). No support
-for route refresh is implemented - only the B<RefreshCallback> function.
+for route refresh is implemented - only the B<RefreshCallback> function.  This
+has no effect if SupportCapabilities is FALSE.
+
+=head2 SupportCapabilities
+
+This parameter specifies whether the B<Net::BGP::Peer> will attempt to
+negotiate capabilities.  You can set this to FALSE if talking to an old BGP
+speaker that doesn't support it (you'll get a notification message for an
+unsupported capability if this is the case).  This defaults to TRUE.
+
+=head2 SupportMBGP
+
+This parameter specifies whether the B<NET::BGP::Peer> will attempt to
+negotiate MBGP.  Quagga (and probably others) need this if you want to send
+the REFRESH capability. Today this just indicates support for IPv4 Unicast.
+This defaults to TRUE.  This has no effect if SupportCapabilities is FALSE.
 
 =head2 OpenCallback
 
@@ -748,6 +810,10 @@ I<peer_as()>
 
 I<this_can_refresh()>
 
+I<this_support_capabilities()>
+
+I<this_can_mbgp()>
+
 I<is_listener()>
 
 I<is_passive()>
@@ -775,6 +841,8 @@ IP and AS numbers.
 
 I<set_open_callback()>
 
+I<set_established_callback()>
+
 I<set_keepalive_callback()>
 
 I<set_update_callback()>
@@ -788,7 +856,8 @@ I<set_notification_callback()>
 I<set_error_callback()>
 
 These methods set the callback functions which are invoked whenever the
-peer receives the corresponding BGP message type from its peer. They
+peer receives the corresponding BGP message type from its peer, or, in the
+case of I<set_established_callback>, transitions to the relevant state. They
 can be set in the constructor as well as with these methods. These methods
 each take one argument, which is the subroutine reference to be invoked.
 A callback function can be removed by calling the corresponding one of these
@@ -844,17 +913,19 @@ in the UPDATE or REFRESH message, while in the latter two cases it is a
 B<Net::BGP::Notification> object encapsulating the information in the
 NOTIFICATION message sent or received.
 
-The RESET callback is special, since it is used whenever an established BGP
-session is reset, even though no message has been recieved or sent. The REFRESH
-callback is also special, since it is also called without a REFRESH object
-whenever a BGP session is established. The two callbacks can be used to clear
-and retransmit a RIB from/to the peer in question.
+The RESET and ESTABLISHED callbacks are special, since they are used whenever an
+established BGP session is reset, even though no message has been recieved or sent.
+The REFRESH callback is also special, since it is also called without a REFRESH
+object whenever a BGP session is established. The two callbacks can be used to
+clear and retransmit a RIB from/to the peer in question.
 
 Whenever a callback function is to be invoked, the action occuring internally is
 the invocation of one of the following methods, corresponding to the event which
 has occured:
 
 I<open_callback()>
+
+I<established_callback()>
 
 I<keepalive_callback()>
 
@@ -871,9 +942,9 @@ I<error_callback()>
 Internally, each of these methods just checks to see whether a program defined
 callback function has been set and calls it if so, passing it arguments as
 described above. As an alternative to providing subroutine references to the
-constructor or through the I<set_open_callback()>, I<set_keepalive_callback()>,
-I<set_update_callback()>, I<set_refresh_callback()>, I<set_reset_callback()>,
-I<set_notification_callback()>, and I<set_error_callback()>
+constructor or through the I<set_open_callback()>, I<set_established_callback()>,
+I<set_keepalive_callback()>, I<set_update_callback()>, I<set_refresh_callback()>,
+I<set_reset_callback()>, I<set_notification_callback()>, and I<set_error_callback()>
 methods, an application may effect a similar result by sub-classing the
 B<Net::BGP::Peer> module and overridding the defintions of the above methods
 to perform whatever actions would have been executed by ordinary callback functions.

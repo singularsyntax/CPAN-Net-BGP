@@ -361,10 +361,19 @@ sub _setfromstring
  $value =~ s/ ?, ?/,/g;
  while ($value ne '')
   {
+   # Note that the AS_SEQUENCE can't be > 255 path elements.  The entire len
+   # of the AS_PATH can be > 255 octets, true, but not an individual AS_SET
+   # segment.
+   # TODO: We should do the same for other path types and also take care to
+   # not allow ourselves to overflow the 65535 byte length limit if this is
+   # converted back to a usable path.
+   # TODO: It would be better to put the short AS PATH at end of the path,
+   # not the beginning of the path, so that it is easier for other routers
+   # to process.
    confess 'Invalid path segments for path object: >>' . $value . '<<'
      unless (($value =~ /^(\([^\)]*\))( (.*))?$/) ||  # AS_CONFED_* segment
              ($value =~ /^(\{[^\}]*\})( (.*))?$/) ||  # AS_SET segment
-             ($value =~ /^([0-9][0-9 ]*)( (.*))?$/)); # AS_SEQUENCE seqment
+             ($value =~ /^(([0-9]+\s*){1,255})(.*)?$/)); # AS_SEQUENCE seqment
    $value = $3 || '';
    my $segment = Net::BGP::ASPath::AS->new($1);
    push(@{$this->{_as_path}},$segment);
