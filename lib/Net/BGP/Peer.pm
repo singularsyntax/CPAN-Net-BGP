@@ -269,13 +269,13 @@ sub this_can_refresh
     return ( $this->{_announce_refresh} );
 }
 
-sub this_support_capabilities
+sub support_capabilities
 {
     my $this = shift();
     return ( $this->{_support_capabilities} );
 }
 
-sub this_can_mbgp
+sub support_mbgp
 {
     my $this = shift();
     return ( $this->{_support_mbgp} );
@@ -562,9 +562,9 @@ Net::BGP::Peer - Class encapsulating BGP-4 peering session state and functionali
     $peer_id = $peer->peer_id();
     $peer_as = $peer->peer_as();
 
-    $i_will  = $peer->this_support_capabilities();
+    $i_will  = $peer->support_capabilities();
 
-    $i_mbgp  = $peer->this_can_mbgp();
+    $i_mbgp  = $peer->support_mbgp();
 
     $i_can   = $peer->this_can_refresh();
     $peer_can= $peer->peer_can_refresh();
@@ -810,9 +810,9 @@ I<peer_as()>
 
 I<this_can_refresh()>
 
-I<this_support_capabilities()>
+I<support_capabilities()>
 
-I<this_can_mbgp()>
+I<support_mbgp()>
 
 I<is_listener()>
 

@@ -1146,13 +1146,13 @@ sub _encode_bgp_open_message
     # encode optional parameters and length (only refresh supported)
     my $opt = '';
 
-    if ($this->parent->this_support_capabilities) {
+    if ($this->parent->support_capabilities) {
         # RFC5492
         # Format is <2> <capability_len> <cap_code> <data_len>
 
         # Parameter type 2, length 6, capability 1 with a length of 4
         # Address family 1 (IPv4), reserved bit 0, type 1 (unicast)
-        $opt .= pack('ccccncc',2,6,1,4,1,0,1) if $this->parent->this_can_mbgp;
+        $opt .= pack('ccccncc',2,6,1,4,1,0,1) if $this->parent->support_mbgp;
 
         # Both the standard (2) and Cisco (128) capabilities are sent
         $opt .= pack('cccc',2,2,2,0) if $this->parent->this_can_refresh;
