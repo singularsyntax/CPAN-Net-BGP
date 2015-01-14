@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 141;
+use Test::More tests => 163;
 
 # Use
 use_ok('Net::BGP::ASPath');
@@ -17,22 +17,39 @@ my $aseset     = [0,'{}','42','(42)','','{}'];
 my $aseconfseq = [0,'()','42','(42)','',''];
 my $aseconfset = [0,'({})','42','(42)','',''];
 my $asseq      = [3,'1 2 3','42 1 2 3','(42) 1 2 3','1 2 3','1 2 3'];
-my $asset      = [4,'{1,2,3,4}','42 {1,2,3,4}','(42) {1,2,3,4}',undef,undef];
+my $asset      = [1,'{1,2,3,4}','42 {1,2,3,4}','(42) {1,2,3,4}',undef,undef];
 my $asconfseq  = [0,'(1 2 3 4 5)','42','(42 1 2 3 4 5)',undef,''];
 my $asconfset  = [0,'({1,2,3,4,5,6})','42','(42) ({1,2,3,4,5,6})',undef,''];
-my $combi1     = [6,'1 2 3 {4,5,6}','42 1 2 3 {4,5,6}','(42) 1 2 3 {4,5,6}',undef,undef];
+my $combi1     = [4,'1 2 3 {4,5,6}','42 1 2 3 {4,5,6}','(42) 1 2 3 {4,5,6}',undef,undef];
 my $combi2     = [3,'(1 2 3) 4 5 6','42 4 5 6','(42 1 2 3) 4 5 6',undef,'4 5 6'];
-my $combi3     = [6,'(1 2 3) 4 5 6 {7,8,9}','42 4 5 6 {7,8,9}',
+my $combi3     = [4,'(1 2 3) 4 5 6 {7,8,9}','42 4 5 6 {7,8,9}',
                  '(42 1 2 3) 4 5 6 {7,8,9}',undef,'4 5 6 {7,8,9}'];
 my $combi4     = [3,'(1 2 3) ({4,5,6}) 7 8 {9}','42 7 8 {9}',
                  '(42 1 2 3) ({4,5,6}) 7 8 {9}',undef,'7 8 {9}'];
+my $as4        = [2,
+                  '{100000,200000,300000} 400000',
+                  '42 {100000,200000,300000} 400000',
+                  '(42) {100000,200000,300000} 400000',
+                  undef,
+                  '{100000,200000,300000} 400000',
+                 ];
+my $longpath   = [301,
+                  ('1 'x300). '2',
+                  '42 '.('1 'x300).'2',
+                  '(42) '.('1 'x300).'2',
+                  undef,
+                  ('1 'x300).'2',
+                 ];
 my %l;
 my %s;
+
+my $ss=0;
 
 foreach my $pair (
 	$aseseq,$aseset,$aseconfseq,$aseconfset,
 	$asseq,$asset,$asconfseq,$asconfset,
-	$combi1,$combi2,$combi3,$combi4,
+	$combi1,$combi2,$combi3,$combi4,$as4,
+        $longpath
 	)
  {
   my ($len,$str,$prep,$prep_conf,$cup,$strip) = @{$pair};
@@ -66,17 +83,19 @@ foreach my $pair (
   ok("$strip1" eq $strip,"Strip '$strip1' should be '$strip'");
   my $striped = $a->striped;
   ok("$striped" eq $strip,"Striped '$striped' should be '$strip'");
+
   my $trans = _new_from_msg Net::BGP::ASPath($a->_encode);
   ok($a eq $trans,"'$trans' should be decode(encode('$a'))");
  };
 
-ok($l{3} > $l{0},'lenght 3 greater then length 0');
-ok($l{3} < $l{6},'lenght 3 less then length 6');
-ok($l{3} == $l{3},'lenght 3 equals length 3');
-my $sorted = join(',',map { $_->length; } (sort { $a <=> $b } values(%l)));
-ok($sorted eq '0,3,4,6',"sort with <=> ($sorted)");
+ok($l{3} > $l{0},'length 3 greater then length 0');
+ok($l{3} < $l{4},'length 3 less then length 4');
+ok($l{3} == $l{3},'length 3 equals length 3');
 
-ok($s{$combi4}[0] == 1,'old fasion array access 1');
+my $sorted = join(',',map { $_->length; } (sort { $a <=> $b } values(%l)));
+ok($sorted eq '0,1,2,3,4,301',"sort with <=> ($sorted)");
+
+ok($s{$combi4}[0] == 1,'old fasioned array access 1');
 
 my $arracc = join(' ',@{$s{$combi4}});
 ok($arracc eq '1 2 3 4 5 6 7 8 9',"old fasion array access 2 ($arracc)");
@@ -130,5 +149,16 @@ foreach my $arg (['4 5 6 '],[[4,5,6]])
   $prepend2->prepend_confed(@{$arg});
   ok("$prepend2" eq '(4 5 6) 1 2 3','Prepend ' . $n++);
  };
+
+# Test to make sure creating an ASPath by array reference works
+ my $arraypath = Net::BGP::ASPath->new([65001,65002]); # Straight from docs
+ ok (
+     $arraypath->length == 2,
+     'Constructing AS Path from Array proper length'
+ );
+ ok (
+     $arraypath->as_string eq '65001 65002',
+     'Constructing AS Path from Array proper content'
+ );
 
 __END__

@@ -1,6 +1,11 @@
 Changes
 lib/Net/BGP.pm
 lib/Net/BGP/ASPath.pm
+lib/Net/BGP/ASPath/AS.pm
+lib/Net/BGP/ASPath/AS_CONFED_SEQUENCE.pm
+lib/Net/BGP/ASPath/AS_CONFED_SET.pm
+lib/Net/BGP/ASPath/AS_SEQUENCE.pm
+lib/Net/BGP/ASPath/AS_SET.pm
 lib/Net/BGP/NLRI.pm
 lib/Net/BGP/Notification.pm
 lib/Net/BGP/Peer.pm
@@ -19,3 +24,4 @@ t/20-NLRI.t
 t/30-Update.t
 t/31-Refresh.t
 t/50-BGP.t
+t/51-BGP-AS4.t

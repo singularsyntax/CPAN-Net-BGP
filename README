@@ -1,4 +1,4 @@
-Net::BGP version 0.15
+Net::BGP version 0.16
 =====================
 
 This module is an implementation of the BGP-4 inter-domain
@@ -36,7 +36,7 @@ libraries are need:
   Test::More
   Test::Harness
 
-AUTHOR
+AUTHORS
 
 Stephen J. Scheck <sscheck@cpan.org>
 

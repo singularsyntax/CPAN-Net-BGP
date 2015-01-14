@@ -94,7 +94,13 @@ sub BGP_MESSAGE_REFRESH      { 5 }
 ## BGP Open Optional Parameter Types ##
 
 sub BGP_OPTION_AUTH          { 1 }
-sub BGP_OPTION_REFRESH       { 2 }
+sub BGP_OPTION_CAPABILITIES  { 2 }
+
+## BGP Open Capabilities Parameter Types
+sub BGP_CAPABILITY_MBGP        {   1 }
+sub BGP_CAPABILITY_REFRESH     {   2 }
+sub BGP_CAPABILITY_AS4         {  65 }
+sub BGP_CAPABILITY_REFRESH_OLD { 128 }
 
 ## Event-Message Type Correlation ##
 
@@ -257,7 +263,9 @@ sub new
         _bgp_version           => BGP_VERSION_4,
         _fsm_state             => BGP_STATE_IDLE,
 	_peer_refresh          => FALSE,
-	_peer_annonced_id      => undef,
+        _peer_as4              => FALSE,
+        _peer_mbgp             => FALSE,
+        _peer_announced_id     => undef,
         _event_queue           => [],
         _message_queue         => [],
         _hold_time             => BGP_HOLD_TIME,
@@ -333,13 +341,26 @@ sub can_refresh
     return shift->{_peer_refresh};
 }
 
+sub can_as4
+{
+    return shift->{_peer_as4};
+}
+
+sub can_mbgp
+{
+    return shift->{_peer_mbgp};
+}
+
 sub update
 {
     my ($this, $update) = @_;
 
     my $result = FALSE;
     if ( $this->{_fsm_state} == BGP_STATE_ESTABLISHED ) {
-        my $buffer = $this->_encode_bgp_update_message($update->_encode_message());
+
+        my $encoded = $update->_encode_message( { as4 => $this->{_peer_as4} } );
+
+        my $buffer = $this->_encode_bgp_update_message($encoded);
         $this->_send_msg($buffer);
         $result = TRUE;
     }
@@ -383,7 +404,7 @@ sub _clone
 {
     my $this = shift();
 
-    croak 'Cannot have more then one clone at a time!' if defined $this->{_sibling};
+    croak 'Cannot have more than one clone at a time!' if defined $this->{_sibling};
 
     my $clone = {};
     foreach my $key ( keys(%{ $this }) ) {
@@ -394,7 +415,7 @@ sub _clone
 
     # override some of the inherited properties
     $clone->{_peer_refresh}         = FALSE;
-    $clone->{_peer_annonced_id}     = undef;
+    $clone->{_peer_announced_id}    = undef;
     $clone->{_hold_timer}           = undef;
     $clone->{_keep_alive_timer}     = undef;
     $clone->{_fsm_state}            = BGP_STATE_CONNECT;
@@ -792,7 +813,10 @@ sub _handle_receive_update_message
     }
 
     $buffer = $this->_dequeue_message();
-    $update = Net::BGP::Update->_new_from_msg($buffer);
+    $update = Net::BGP::Update->_new_from_msg(
+        $buffer,
+        { as4 => $this->{_peer_as4} }
+    );
 
     # invoke user callback function
     $this->parent->update_callback($update);
@@ -831,7 +855,6 @@ sub _handle_receive_notification_message
     my $error;
 
     $error = $this->_decode_bgp_notification_message($this->_dequeue_message());
-
     $this->_close_session();
 
     # invoke user callback function
@@ -1143,7 +1166,7 @@ sub _encode_bgp_open_message
     my $this = shift();
     my ($buffer, $length);
 
-    # encode optional parameters and length (only refresh supported)
+    # encode optional parameters and length
     my $opt = '';
 
     if ($this->parent->support_capabilities) {
@@ -1154,9 +1177,34 @@ sub _encode_bgp_open_message
         # Address family 1 (IPv4), reserved bit 0, type 1 (unicast)
         $opt .= pack('ccccncc',2,6,1,4,1,0,1) if $this->parent->support_mbgp;
 
+        if ( defined($this->{_peer_announced_id}) ) {
+            # We received an open from the other end
+
+            if ($this->{_peer_mbgp}) {
+                $opt .= $this->_encode_capability_mbgp();
+            }
+
+            if ($this->{_peer_as4}) {
+                $opt .= $this->_encode_capability_as4();
+            }
+
+        }  else {
+            # We are sending the open
+
+            if ( $this->parent->this_can_mbgp ) {
+                $opt .= $this->_encode_capability_mbgp();
+            }
+            if ( $this->parent->this_can_as4 ) {
+                $opt .= $this->_encode_capability_as4();
+            }
+
+        }
+
         # Both the standard (2) and Cisco (128) capabilities are sent
-        $opt .= pack('cccc',2,2,2,0) if $this->parent->this_can_refresh;
-        $opt .= pack('cccc',2,2,128,0) if $this->parent->this_can_refresh;
+        if ($this->parent->this_can_refresh) {
+            $opt .= $this->_encode_capability(BGP_CAPABILITY_REFRESH, '');
+            $opt .= $this->_encode_capability(BGP_CAPABILITY_REFRESH_OLD, '');
+        }
     }
 
     $buffer = pack('C', length($opt)) . $opt;
@@ -1168,12 +1216,60 @@ sub _encode_bgp_open_message
     $buffer = pack('n', $this->{_hold_time}) . $buffer;
 
     # encode local Autonomous System number
-    $buffer = pack('n', $this->parent->this_as) . $buffer;
+    if ($this->parent->this_as > 65535) {
+        $buffer = pack('n', 23456) . $buffer;
+    } else {
+        $buffer = pack('n', $this->parent->this_as) . $buffer;
+    }
 
     # encode BGP version
     $buffer = pack('C', $this->{_bgp_version}) . $buffer;
 
     return ( $this->_encode_bgp_message(BGP_MESSAGE_OPEN, $buffer) );
+}
+
+sub _encode_capability_mbgp
+{
+    my $this = shift;
+
+    # Capability 1 with data of:
+    # Address family 1 (IPv4), reserved bit 0, type 1 (unicast)
+    my $cap = pack('ncc', 1, 0, 1);
+    my $opt = $this->_encode_capability(BGP_CAPABILITY_MBGP, $cap);
+
+    return $opt;
+}
+
+sub _encode_capability_as4
+{
+    my $this = shift;
+
+    # Capability 65 with data of the ASN
+    my $cap = pack('N', $this->parent->this_as());
+    my $opt = $this->_encode_capability(BGP_CAPABILITY_AS4, $cap);
+
+    return $opt;
+}
+
+# Encodes a capability (inside the capability option)
+# RFC5492
+# Format is <2> <capability_len> <cap_code> <data_len>
+sub _encode_capability
+{
+    my ($this, $type, $data) = @_;
+
+    my $opt = '';
+    $opt .= pack('C', BGP_OPTION_CAPABILITIES);    # Option Type
+
+    my $cap = '';
+    $cap .= pack('C', $type);                       # Capability Type
+    $cap .= pack('C', length($data));               # Capability Data Len
+    $cap .= $data;                                  # Capability data
+
+    $opt .= pack('C', length($cap));                # Option Data Len
+    $opt .= $cap;
+
+    return $opt;
 }
 
 sub _decode_bgp_open_message
@@ -1194,35 +1290,43 @@ sub _decode_bgp_open_message
     # decode and validate remote Autonomous System number
     $as = unpack('n', substr($buffer, 1, 2));
     if ( $as != $this->parent->peer_as ) {
-        $this->_error(BGP_ERROR_CODE_OPEN_MESSAGE,
-                      BGP_ERROR_SUBCODE_BAD_PEER_AS);
+        if ($this->parent->peer_as < 65536) {
+            $this->_error(BGP_ERROR_CODE_OPEN_MESSAGE,
+                          BGP_ERROR_SUBCODE_BAD_PEER_AS);
+        } elsif ($as != 23456) {
+            $this->_error(BGP_ERROR_CODE_OPEN_MESSAGE,
+                          BGP_ERROR_SUBCODE_BAD_PEER_AS);
+        }
     }
 
     # decode and validate received Hold Time
     $hold_time = _min(unpack('n', substr($buffer, 3, 2)), $this->{_hold_time});
     if ( ($hold_time < 3) && ($hold_time != 0) ) {
         $this->_error(BGP_ERROR_CODE_OPEN_MESSAGE,
-                      BGP_ERROR_SUBCODE_BAD_HOLD_TIME);
+            BGP_ERROR_SUBCODE_BAD_HOLD_TIME);
     }
 
     # decode received BGP Identifier
+    # Spelling error is retained for compatibility.
     $this->{_peer_annonced_id} = inet_ntoa(substr($buffer, 5, 4));
+    $this->{_peer_announced_id} = inet_ntoa(substr($buffer, 5, 4));
 
     # decode known Optional Parameters
     my $opt_length = unpack('c', substr($buffer, 9, 1));
-    my $opt = substr($buffer,10,$opt_length);
+    my $opt = substr($buffer, 10, $opt_length);
     while ($opt ne '')
      {
-      my ($type,$length) = unpack('cc', substr($opt, 0, 2));
-      my $value = substr($opt,2,$length);
-      if ($type eq BGP_OPTION_REFRESH)
+      my ($type, $length) = unpack('cc', substr($opt, 0, 2));
+      my $value = substr($opt, 2, $length);
+      if ($type eq BGP_OPTION_CAPABILITIES)
        {
-        $this->{'_peer_refresh'} = TRUE;
+        $this->_decode_capabilities($value);
        }
       else
        { # Unknown optional parameter!
-       };
-      $opt = substr($opt,2+$length);
+         # XXX We should send a notify here.
+       }
+      $opt = substr($opt, 2+$length);
      };
 
     # set Hold Time to negotiated value
@@ -1230,6 +1334,61 @@ sub _decode_bgp_open_message
 
     # indicate decoding and validation success
     return ( TRUE );
+}
+
+# Capabilities we don't understand get ignored.
+sub _decode_capabilities
+{
+    my ($this, $value) = @_;
+
+    $this->{'_peer_refresh'} = TRUE;
+
+    if (length($value) < 2) {
+        $this->_error(BGP_ERROR_CODE_OPEN_MESSAGE,
+            BGP_ERROR_SUBCODE_BAD_OPT_PARAMETER);
+    }
+
+    my ($type, $len) = unpack('cc', substr($value, 0, 2));
+
+    my $data = '';
+    if (length($value) > 2) {
+       $data = substr($value, 2);
+    }
+    if (length($data) != $len) {
+        $this->_error(BGP_ERROR_CODE_OPEN_MESSAGE,
+            BGP_ERROR_SUBCODE_BAD_OPT_PARAMETER);
+    }
+
+    if ($type == BGP_CAPABILITY_MBGP) {
+        $this->{_peer_mbgp} = TRUE;
+    }
+
+    if ($type == BGP_CAPABILITY_REFRESH) {
+        $this->{_peer_refresh} = TRUE;
+    }
+    if ($type == BGP_CAPABILITY_REFRESH_OLD) {
+        $this->{_peer_refresh} = TRUE;
+    }
+
+    if ($type == BGP_CAPABILITY_AS4) {
+
+        if ($len != 4) {
+            $this->_error(BGP_ERROR_CODE_OPEN_MESSAGE,
+                BGP_ERROR_SUBCODE_BAD_OPT_PARAMETER);
+        }
+   
+        my $as = unpack('N', $data); 
+        if ($as != $this->parent->peer_as) {
+            $this->_error(BGP_ERROR_CODE_OPEN_MESSAGE,
+                BGP_ERROR_SUBCODE_BAD_PEER_AS);
+        }
+
+        # Both ends must support this. 
+        if ( $this->parent->this_can_as4 ) {
+            $this->{_peer_as4} = TRUE;
+        }
+    }
+
 }
 
 sub _decode_bgp_notification_message

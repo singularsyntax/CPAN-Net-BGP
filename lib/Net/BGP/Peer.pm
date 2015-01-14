@@ -106,6 +106,7 @@ sub new
         _announce_refresh      => FALSE,
         _support_capabilities  => TRUE,
         _support_mbgp          => TRUE,
+        _support_as4           => FALSE,
         _open_callback         => undef,
         _established_callback  => undef,
         _keepalive_callback    => undef,
@@ -122,64 +123,74 @@ sub new
     while ( defined($arg = shift()) ) {
         $value = shift();
 
-        if (( $arg =~ /start/i )
-         || ( $arg =~ /connectretrytime/i )
-         || ( $arg =~ /keepalivetime/i )
-         || ( $arg =~ /holdtime/i )) {
+        if (( $arg =~ /^start$/i )
+         || ( $arg =~ /^connectretrytime$/i )
+         || ( $arg =~ /^keepalivetime$/i )
+         || ( $arg =~ /^holdtime$/i )) {
             $transarg{$arg} = $value;
         }
-        elsif ( $arg =~ /thisid/i ) {
+        elsif ( $arg =~ /^thisid$/i ) {
             $this->{_local_id} = $value;
         }
-        elsif ( $arg =~ /thisas/i ) {
+        elsif ( $arg =~ /^thisas$/i ) {
             $this->{_local_as} = $value;
         }
-        elsif ( $arg =~ /peerid/i ) {
+        elsif ( $arg =~ /^peerid$/i ) {
             $this->{_peer_id} = $value;
         }
-        elsif ( $arg =~ /peeras/i ) {
+        elsif ( $arg =~ /^peeras$/i ) {
             $this->{_peer_as} = $value;
         }
-        elsif ( $arg =~ /peerport/i ) {
+        elsif ( $arg =~ /^peerport$/i ) {
             $this->{_peer_port} = $value;
         }
-        elsif ( $arg =~ /listen/i ) {
+        elsif ( $arg =~ /^listen$/i ) {
             $this->{_listen} = $value;
         }
-        elsif ( $arg =~ /passive/i ) {
+        elsif ( $arg =~ /^passive$/i ) {
             $this->{_passive} = $value;
         }
-        elsif ( $arg =~ /refreshcallback/i ) {
+        elsif ( $arg =~ /^refreshcallback$/i ) {
             $this->{_refresh_callback} = $value;
         }
-        elsif ( $arg =~ /(announce)?refresh/i ) {
+        elsif ( $arg =~ /^refresh$/i ) {
+            warnings::warnif(
+                'deprecated',
+                'Refresh in is deprecated, use AnnounceRefresh instead'
+            );
             $this->{_announce_refresh} = $value;
         }
-        elsif ( $arg =~ /supportcapabilities/i ) {
+        elsif ( $arg =~ /^announcerefresh$/i ) {
+            $this->{_announce_refresh} = $value;
+        }
+        elsif ( $arg =~ /^supportcapabilities$/i ) {
             $this->{_support_capabilities} = $value;
         }
-        elsif ( $arg =~ /supportmbgp/i ) {
+        elsif ( $arg =~ /^supportmbgp$/i ) {
             $this->{_support_mbgp} = $value;
         }
-        elsif ( $arg =~ /opencallback/i ) {
+        elsif ( $arg =~ /^supportas4$/i ) {
+            $this->{_support_as4} = $value;
+        }
+        elsif ( $arg =~ /^opencallback$/i ) {
             $this->{_open_callback} = $value;
         }
-        elsif ( $arg =~ /establishedcallback/i ) {
+        elsif ( $arg =~ /^establishedcallback$/i ) {
             $this->{_established_callback} = $value;
         }
-        elsif ( $arg =~ /keepalivecallback/i ) {
+        elsif ( $arg =~ /^keepalivecallback$/i ) {
             $this->{_keepalive_callback} = $value;
         }
-        elsif ( $arg =~ /updatecallback/i ) {
+        elsif ( $arg =~ /^updatecallback$/i ) {
             $this->{_update_callback} = $value;
         }
-        elsif ( $arg =~ /resetcallback/i ) {
+        elsif ( $arg =~ /^resetcallback$/i ) {
             $this->{_reset_callback} = $value;
         }
-        elsif ( $arg =~ /notificationcallback/i ) {
+        elsif ( $arg =~ /^notificationcallback$/i ) {
             $this->{_notification_callback} = $value;
         }
-        elsif ( $arg =~ /errorcallback/i ) {
+        elsif ( $arg =~ /^errorcallback$/i ) {
             $this->{_error_callback} = $value;
         }
         else {
@@ -269,6 +280,12 @@ sub this_can_refresh
     return ( $this->{_announce_refresh} );
 }
 
+sub this_can_as4
+{
+    my $this = shift();
+    return ( $this->{_support_as4} );
+}
+
 sub support_capabilities
 {
     my $this = shift();
@@ -297,6 +314,18 @@ sub peer_port
 {
     my $this = shift();
     return ( $this->{_peer_port} );
+}
+
+sub peer_can_as4
+{
+    my $this = shift();
+    return $this->transport->can_as4;
+}
+
+sub peer_can_mbgp
+{
+    my $this = shift();
+    return $this->transport->can_mbgp;
 }
 
 sub peer_can_refresh
@@ -540,6 +569,7 @@ Net::BGP::Peer - Class encapsulating BGP-4 peering session state and functionali
         AnnounceRefresh      => 1,
         SupportCapabilities  => 1,
         SupportMBGP          => 1,
+        SupportAS4           => 1,
         OpenCallback         => \&my_open_callback,
         KeepaliveCallback    => \&my_keepalive_callback,
         UpdateCallback       => \&my_update_callback,
@@ -568,6 +598,8 @@ Net::BGP::Peer - Class encapsulating BGP-4 peering session state and functionali
 
     $i_can   = $peer->this_can_refresh();
     $peer_can= $peer->peer_can_refresh();
+
+    $peer_as4= $peer->peer_can_as4();
 
     $listen  = $peer->is_listener();
     $passive = $peer->is_passive();
@@ -700,6 +732,16 @@ This parameter specifies whether the B<NET::BGP::Peer> will attempt to
 negotiate MBGP.  Quagga (and probably others) need this if you want to send
 the REFRESH capability. Today this just indicates support for IPv4 Unicast.
 This defaults to TRUE.  This has no effect if SupportCapabilities is FALSE.
+
+=head2 SupportAS4
+
+This paramemter specifies whether outgoing connections from B<NET::BGP::Peer>
+will attempt to negotiate AS4 (32 bit ASNs). For received connections, this
+parameter has no effect - it only determines whether or not AS4 is negotiated
+during outgoing connection.  For received connections, this will be changed
+to TRUE (on the listening connection) whenever the appropriate OPEN capability
+is received.  Note that the B<SupportCapabilities> must be true for this to
+be sent.  This defaults to FALSE.
 
 =head2 OpenCallback
 

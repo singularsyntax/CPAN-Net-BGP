@@ -1,647 +1,471 @@
 #!/usr/bin/perl
 
-package Net::BGP::ASPath::AS;
-use bytes;
-
-use strict;
-use Carp;
-use Exporter;
-use vars qw(
-    $VERSION @ISA
-);
-
-use overload
-	'<=>' => \&compare,
-	'""'  => \&asstring,
-	'fallback' => 1;
-	# DO NOT OVERLOAD @{} - it's an array - we need this!
-
-$VERSION = '0.15';
-
-use Net::BGP::Notification qw( :errors );
-
-@Net::BGP::ASPath::AS_SEQUENCE::ISA     = qw( Exporter );
-
-## BGP AS_PATH Path Attribute Type Classes ##
-
-my @BGP_PATH_ATTR_CLASS = (
-	undef,					# unused
-	'Net::BGP::ASPath::AS_SET',		# BGP_PATH_ATTR_AS_SET
-	'Net::BGP::ASPath::AS_SEQUENCE',	# BGP_PATH_ATTR_AS_SEQUENCE
-	'Net::BGP::ASPath::AS_CONFED_SEQUENCE',	# BGP_PATH_ATTR_AS_CONFED_SEQUENCE
-	'Net::BGP::ASPath::AS_CONFED_SET'	# BGP_PATH_ATTR_AS_CONFED_SET
-	);
-
-## Public Class Methods ##
-
-sub new
-{
-    my ($class,$value) = (shift,shift);
-
-    return $value->clone if (ref $value) =~ /^Net::BGP::ASPath::AS_/;
-
-    my ($this,$realclass);
-
-    $value = '' unless defined($value);
-
-    if (ref $value eq 'HASH')
-     {
-      # Construct SET from HASH
-      croak "Hash argument given for a non-set AS_PATH element" unless $class =~ /_SET$/;
-      $this->{keys %{$value}} = values(%{$value});
-      bless($this,$class);
-      return $this;
-     };
-
-    if (ref $value eq 'ARRAY')
-     {
-      # Construct SET from HASH
-      if ($class =~ /_SEQUENCE$/)
-       {
-        push(@{$this},@{$value});
-       }
-      else
-       {
-        $this = {};
-        foreach my $a (@{$value}) { $this->{$a} = 1; };
-       };
-      bless($this,$class);
-      return $this;
-     };
-
-    croak "Unknown argument type (" . (ref $value) . ") parsed as argument to AS_PATH construtor."
-	if (ref $value);
-
-    # Only a scalar left - Parse string!
-    my $confed = '';
-    if (($value =~ /^\((.*)\)$/) ||
-        ($value eq '' && $class =~ /_CONFED_/))
-     {
-      $value = $1 if defined($1);
-      $confed = '_CONFED';
-     };
-    if (($value =~ /^\{([0-9,]*)\}$/) ||
-        ($value eq '' && $class =~ /_SET$/))
-     {
-      my $set = defined $1 ? $1 : $value;
-      $realclass = 'Net::BGP::ASPath::AS' . $confed . '_SET';
-      $this = {};
-      foreach my $a (split(/,/,$set)) { $this->{$a} = 1; };
-     }
-    elsif ($value =~ /^[0-9 ]*$/)
-     {
-      $realclass = 'Net::BGP::ASPath::AS' . $confed . '_SEQUENCE';
-      $this = [split(' ',$value)];
-     }
-    else
-     {
-      croak "$value is not a valid AS_PATH segment";
-     }; 
-
-    croak "AS_PATH segment is a $realclass but was constructed as $class"
-	if $class !~ /::AS$/ && $class ne $realclass;
-
-    bless($this,$realclass);
-    return ( $this );
-}
-
-sub _new_from_msg
-# Constructor - returns object AND buffer with data removed
-{
-  my ($class,$buffer) = @_;
-  my ($type,$len,@list) = unpack('CC',$buffer);
-
-  if ($len*2+2 > length($buffer))
-  {
-      Net::BGP::Notification->throw(
-          ErrorCode    => BGP_ERROR_CODE_UPDATE_MESSAGE,
-          ErrorSubCode => BGP_ERROR_SUBCODE_BAD_AS_PATH
-      );
-  }
-
-  ($type,$len,@list) = unpack('CCn*',substr($buffer,0,(2*$len)+2,''));
-  $class = $BGP_PATH_ATTR_CLASS[$type];
-  return ($class->new(\@list),$buffer);
-}
-
-sub _encode
-{
-  my $this = shift;
-  my $list = $this->asarray;
-  my $len = scalar @{$list};
-  my $type = $this->type;
-  my $msg = pack('CCn*',$type,$len,@{$list});
-}
-
-sub compare
-{
-    my ($this,$other) = @_;
-    return undef unless defined($other);
-    return $this->length <=> $other->length;
-}
-
-sub clone
-{
-    my $proto = shift;
-    my $class = ref $proto || $proto;
-    $proto = shift unless ref $proto;
-
-    my $clone;
-    if ($class =~ /_SET$/)
-     {
-      return $class->new([keys %{$proto}]);
-     }
-    else
-     {
-      return $class->new([@{$proto}]); # Unblessed!
-     };
-}
-
-sub asstring
-{
-  my $this = shift;
-  croak 'Instance of ASPath::AS should not exist!' if (ref $this eq 'Net::BGP::ASPath::AS');
-  return $this->asstring;
-}
-
-sub asarray
-{
-  my $this = shift;
-  croak 'Instance of ASPath::AS should not exist!' if (ref $this eq 'Net::BGP::ASPath::AS');
-  return $this->asarray;
-}
-
-## End Of Net::BGP::ASPath::AS ##
-
-package Net::BGP::ASPath::AS_SEQUENCE;
-
-use strict;
-
-@Net::BGP::ASPath::AS_SEQUENCE::ISA     = qw( Net::BGP::ASPath::AS );
-
-sub type
-{
- return 2;
-}
-
-sub length
-{
- my $this = shift;
- return scalar @{$this};
-}
-
-sub asstring
-{
- my $this = shift;
- return join(' ',@{$this});
-};
- 
-sub asarray
-{
- my $this = shift;
- return [@{$this}]; # Unblessed version of list!
-}
-
-## End Of Net::BGP::ASPath::AS_SEQUENCE ##
-
-package Net::BGP::ASPath::AS_SET;
-
-use strict;
-
-@Net::BGP::ASPath::AS_SET::ISA     = qw( Net::BGP::ASPath::AS );
-
-sub type
-{
- return 1;
-}
-
-sub length
-{
- my $this = shift;
- return scalar keys %{$this};
-}
-
-sub asstring
-{
- my $this = shift;
- return '{'.join(',',sort {$a <=> $b} keys %{$this}).'}';
-};
-
-sub asarray
-{
- my $this = shift;
- return [sort {$a <=> $b} keys %{$this}];
-}
-
-sub merge
-{
- my $this = shift;
- foreach my $obj (@_)
-  {
-   foreach my $as (@{$obj})
-    {
-     $this->{$as} = 1;
-    };
-  }; 
- return $this;
-}
- 
-## End Of Net::BGP::ASPath::AS_SET ##
-
-package Net::BGP::ASPath::AS_CONFED_SEQUENCE;
-
-use strict;
-
-@Net::BGP::ASPath::AS_CONFED_SEQUENCE::ISA     = qw( Net::BGP::ASPath::AS_SEQUENCE );
-
-sub type
-{
- return 3;
-}
-
-sub length
-{
- return 0;
-}
-
-sub asstring
-{
- return '('.shift->SUPER::asstring.')';
-};
-
-## End Of Net::BGP::ASPath::AS_CONFED_SEQUENCE ##
-
-package Net::BGP::ASPath::AS_CONFED_SET;
-
-use strict;
-
-@Net::BGP::ASPath::AS_CONFED_SET::ISA     = qw( Net::BGP::ASPath::AS_SET );
-
-sub type
-{
- return 4;
-}
-
-sub length
-{
- return 0;
-}
-
-sub asstring
-{
- return '('.shift->SUPER::asstring.')';
-}
-
-## End Of Net::BGP::ASPath::AS_CONFED_SET ##
-
 package Net::BGP::ASPath;
 
 use strict;
 use vars qw(
-    $VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS @PATHTYPES
-    @BGP_PATH_ATTR_COUNTS
+  $VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS @PATHTYPES
+  @BGP_PATH_ATTR_COUNTS
 );
 
 ## Inheritance and Versioning ##
 
 @ISA     = qw( Exporter );
-$VERSION = '0.07';
+$VERSION = '0.16';
 
 ## Module Imports ##
 
 use Carp;
 use IO::Socket;
 use overload
-	'<=>'  => \&len_compare,
-	'<'  => \&len_lessthen,
-	'>'  => \&len_greaterthen,
-	'==' => \&len_equal,
-	'!=' => \&len_notequal,
-	'""' => \&asstring,
-	'+'  => sub { my $x = shift->clone; $x->prepend(shift); },
-	'+=' => \&prepend,
-	'eq' => \&equal,
-	'ne' => \&notequal,
-	'@{}' => \&asarray,
-	'fallback' => 1;
+  '<=>'      => \&len_compare,
+  '<'        => \&len_lessthen,
+  '>'        => \&len_greaterthen,
+  '=='       => \&len_equal,
+  '!='       => \&len_notequal,
+  '""'       => \&as_string,
+  '+'        => sub { my $x = shift->clone; $x->prepend(shift); },
+  '+='       => \&prepend,
+  'eq'       => \&equal,
+  'ne'       => \&notequal,
+  '@{}'      => \&asarray,
+  'fallback' => 1;
+
+use Net::BGP::ASPath::AS;
+use Net::BGP::ASPath::AS_CONFED_SEQUENCE;
+use Net::BGP::ASPath::AS_CONFED_SET;
+use Net::BGP::ASPath::AS_SEQUENCE;
+use Net::BGP::ASPath::AS_SET;
 
 ## Public Class Methods ##
 
-sub new
-{
-    my $class = shift();
+sub new {
+    my $class = shift;
     my $value = shift;
+    my $options = shift;
+
+    if (!defined($options)) { $options = {}; }
+    $options->{as4} ||= 0;
 
     return clone Net::BGP::ASPath($value) if (ref $value eq 'Net::BGP::ASPath');
 
     my $this = {
-        _as_path      => []
+        _as_path => [],
+        _as4 => $options->{as4}
     };
 
     bless($this, $class);
 
     if (defined($value)) {
-      croak "Unknown ASPath constructor argument type: " . ref $value
-	if (ref $value);
+        if (ref $value) {
+            if (ref $value eq 'ARRAY') {
+                $this->_setfromstring(join ' ', @$value);
+            } else {
+                croak "Unknown ASPath constructor argument type: " . ref $value
+            }
+        } else {
+            # Scalar/string
+            $this->_setfromstring($value);
+        }
+    }
 
-      # Scalar/string
-      $this->_setfromstring($value);
-    };
-
-    return ( $this );
+    return ($this);
 }
 
-sub _setfromstring
-{
- my ($this,$value) = @_;
- $this->{_as_path} = [];
- $value =~ s/[ \t]+/ /g;
- $value =~ s/^ //;
- $value =~ s/ $//;
- $value =~ s/ ?, ?/,/g;
- while ($value ne '')
-  {
-   # Note that the AS_SEQUENCE can't be > 255 path elements.  The entire len
-   # of the AS_PATH can be > 255 octets, true, but not an individual AS_SET
-   # segment.
-   # TODO: We should do the same for other path types and also take care to
-   # not allow ourselves to overflow the 65535 byte length limit if this is
-   # converted back to a usable path.
-   # TODO: It would be better to put the short AS PATH at end of the path,
-   # not the beginning of the path, so that it is easier for other routers
-   # to process.
-   confess 'Invalid path segments for path object: >>' . $value . '<<'
-     unless (($value =~ /^(\([^\)]*\))( (.*))?$/) ||  # AS_CONFED_* segment
-             ($value =~ /^(\{[^\}]*\})( (.*))?$/) ||  # AS_SET segment
-             ($value =~ /^(([0-9]+\s*){1,255})(.*)?$/)); # AS_SEQUENCE seqment
-   $value = $3 || '';
-   my $segment = Net::BGP::ASPath::AS->new($1);
-   push(@{$this->{_as_path}},$segment);
-   # push(@{$this->{_as_path}}, Net::BGP::ASPath::AS->new($1));
-  };
- return $this;
+sub _setfromstring {
+    my ($this, $value) = @_;
+    $this->{_as_path} = [];
+
+    # Normalize string
+    $value =~ s/\s+/ /g;
+    $value =~ s/^\s//;
+    $value =~ s/\s$//;
+    $value =~ s/\s?,\s?/,/g;
+
+    while ($value ne '') {
+
+       # Note that the AS_SEQUENCE can't be > 255 path elements.  The entire len
+       # of the AS_PATH can be > 255 octets, true, but not an individual AS_SET
+       # segment.
+       # TODO: We should do the same for other path types and also take care to
+       # not allow ourselves to overflow the 65535 byte length limit if this is
+       # converted back to a usable path.
+       # TODO: It would be better to put the short AS PATH at end of the path,
+       # not the beginning of the path, so that it is easier for other routers
+       # to process.
+        confess 'Invalid path segments for path object: >>' . $value . '<<'
+          unless (
+            ($value =~ /^(\([^\)]*\))( (.*))?$/) ||     # AS_CONFED_* segment
+            ($value =~ /^(\{[^\}]*\})( (.*))?$/) ||     # AS_SET segment
+            ($value =~ /^(([0-9]+\s*){1,255})(.*)?$/)
+          );                                            # AS_SEQUENCE seqment
+
+        $value = $3 || '';
+        my $segment = Net::BGP::ASPath::AS->new($1);
+
+        push(@{ $this->{_as_path} }, $segment);
+    }
+    return $this;
 }
 
-sub clone
-{
+sub clone {
     my $proto = shift;
     my $class = ref $proto || $proto;
     $proto = shift unless ref $proto;
 
     my $clone = { _as_path => [] };
 
-    foreach my $p (@{$proto->{_as_path}})
-     {
-      push(@{$clone->{_as_path}},$p->clone);
-     };
-    return ( bless($clone, $class) );
+    foreach my $p (@{ $proto->{_as_path} }) {
+        push(@{ $clone->{_as_path} }, $p->clone);
+    }
+
+    return (bless($clone, $class));
 }
 
-sub _new_from_msg
-{
-  my ($class,$buffer) = @_;
-  my $this = $class->new;
-  my $segment;
-  while ($buffer ne '')
-   {
-    ($segment,$buffer) = _new_from_msg Net::BGP::ASPath::AS($buffer);
-    return undef unless (defined $segment) && (length($buffer) != 1); # Error in message
-    push(@{$this->{_as_path}},$segment);
-   };
-  return $this;
+# This takes two buffers.  The first buffer is the standard AS_PATH buffer and
+# should always be defined.
+#
+# The second buffer is the AS4_PATH buffer.
+#
+# The third parameter is true if AS4 is natively supported, false if AS4 is not
+sub _new_from_msg {
+    my ($class, $buffer, $buffer2, $options) = @_;
+    my $this = $class->new;
+
+    if (!defined($options)) { $options = {}; }
+    $options->{as4} ||= 0;
+
+    my $size = $options->{as4} ? 4 : 2;
+
+    if (!defined($buffer2)) { $buffer2 = ''; }
+
+    my $segment;
+    while ($buffer ne '') {
+
+        ($segment, $buffer)
+            = Net::BGP::ASPath::AS->_new_from_msg($buffer, $options);
+
+        # Error handling
+        if ( !(defined $segment) ) {
+            return undef;
+        }
+        if ( length($buffer) && ( ( length($buffer) - 2 ) % $size) ) {
+            return undef;
+        }
+
+        push(@{ $this->{_as_path} }, $segment);
+    }
+
+    # We ignore AS4_PATHs on native AS4 speaker sessions
+    # So we stop here.
+    if ($options->{as4}) {
+        return $this;
+    }
+
+    my @as4_path;
+
+    while ($buffer2 ne '') {
+
+        ($segment, $buffer2)
+            = Net::BGP::ASPath::AS->_new_from_msg(
+                $buffer2,
+                { as4 => 1 }
+              );
+
+        # TODO: Should make sure type is only AS_SEQUENCE or AS_SET!
+
+        if ( !(defined $segment) ) {
+            return undef;
+        }
+        if ( length($buffer2) && ( ( length($buffer2) - 2 ) % 4) ) {
+            return undef;
+        }
+
+        push (@as4_path, $segment);
+    }
+
+    my $as_count = $this->_length_helper( $this->{_as_path} );
+    my $as4_count = $this->_length_helper( \@as4_path );
+
+    if ($as_count < $as4_count) {
+        # We ignroe the AS4 stuff per RFC4893 in this case
+        return $this;
+    }
+
+    my $remove = $as4_count;
+
+    while ($remove > 0) {
+        my $ele = pop @{ $this->{_as_path} };
+        if ($ele->length <= $remove) {
+            $remove -= $ele->length;
+        } else {
+            push @{ $this->{_as_path} }, $ele->remove_tail($remove);
+            $remove = 0;
+        }
+    }
+
+    push @{ $this->{_as_path} }, @as4_path;
+
+    return $this;
 }
 
 ## Public Object Methods ##
 
-sub _encode
-{
-  my $this = shift;
-  my $msg = '';
-  foreach my $segment (@{$this->{_as_path}})
-   {
-    $msg .= $segment->_encode;
-   };
-  return $msg;
+# This encodes the AS_PATH and AS4_PATH elements (both are returned)
+#
+# If the AS4_PATH element is undef, that indicates an AS4_PATH is not
+# needed - either we're encoding in 32-bit clear format, or all
+# elements have only 16 bit ASNs.
+sub _encode {
+    my ($this, $args) = @_;
+
+    if (!defined($args)) { $args = {}; }
+    $args->{as4} ||= 0;
+
+    my $has_as4;
+    my $msg  = '';
+    foreach my $segment (@{ $this->{_as_path} }) {
+        $msg .= $segment->_encode($args);
+
+        if ($segment->_has_as4()) { $has_as4 = 1; }
+    }
+
+    my $as4;
+    if ( ( !($args->{as4} ) ) && ($has_as4) ) {
+        $as4 = '';
+
+        foreach my $segment (@{ $this->{_as_path} }) {
+            if ( !(ref($segment) =~ /_CONFED_/) ) {
+                $as4 .= $segment->_encode( { as4 => 1 } );
+            }
+        }
+    }
+
+    return ($msg, $as4);
 }
 
-sub prepend
-{
- my $this = shift;
- my $value = shift;
- return $this->prepend_confed($value) if ($value =~ /^\(/);
- $this->strip;
+sub prepend {
+    my $this  = shift;
+    my $value = shift;
+    return $this->prepend_confed($value) if ($value =~ /^\(/);
+    $this->strip;
 
- my @list = ($value);
- @list = @{$value} if (ref $value eq 'ARRAY');
- @list = split(' ',$list[0]) if $list[0] =~ / /;
+    my @list = ($value);
+    @list = @{$value} if (ref $value eq 'ARRAY');
+    @list = split(' ', $list[0]) if $list[0] =~ / /;
 
- # Ugly - slow - but simple! Should be improved later!
- return $this->_setfromstring(join(' ',@list).' '.$this)->cleanup;
-};
-
-sub prepend_confed
-{
- my $this = shift;
-
- my $value = shift;
- $value =~ s/^\((.*)\)$/$1/ unless ref $value;
-
- my @list = ($value);
- @list = @{$value} if (ref $value eq 'ARRAY');
- @list = split(' ',$list[0]) if $list[0] =~ / /;
-
- # Ugly - slow - but simple! Should be improved later!
- return $this->_setfromstring('('.join(' ',@list).') '.$this)->cleanup;
+    # Ugly - slow - but simple! Should be improved later!
+    return $this->_setfromstring(join(' ', @list) . ' ' . $this)->cleanup;
 }
 
-sub cleanup
-{
- my $this = shift;
+sub prepend_confed {
+    my $this = shift;
 
- # Ugly - slow - but simple! Should be improved later!
- my $str = $this->asstring;
- $str =~ s/\{\}//g;
- $str =~ s/\(\)//g;
- $str =~ s/(\d)\) +\((\d)/$1 $2/g;
- return $this->_setfromstring($str);
+    my $value = shift;
+    $value =~ s/^\((.*)\)$/$1/ unless ref $value;
+
+    my @list = ($value);
+    @list = @{$value} if (ref $value eq 'ARRAY');
+    @list = split(' ', $list[0]) if $list[0] =~ / /;
+
+    # Ugly - slow - but simple! Should be improved later!
+    return $this->_setfromstring('(' . join(' ', @list) . ') ' . $this)
+      ->cleanup;
 }
 
-sub _confed
-{
- my $this = shift->clone;
- @{$this->{_as_path}} = grep { (ref $_) =~ /_CONFED_/ } @{$this->{_as_path}};
- return $this;
+sub cleanup {
+    my $this = shift;
+
+    # Ugly - slow - but simple! Should be improved later!
+    my $str = $this->as_string;
+    $str =~ s/\{\}//g;
+    $str =~ s/\(\)//g;
+    $str =~ s/(\d)\) +\((\d)/$1 $2/g;
+    return $this->_setfromstring($str);
 }
 
-sub strip
-{
- my $this = shift;
- @{$this->{_as_path}} = grep { (ref $_) !~ /_CONFED_/ } @{$this->{_as_path}};
- return $this;
+sub _confed {
+    my $this = shift->clone;
+    @{ $this->{_as_path} } =
+      grep { (ref $_) =~ /_CONFED_/ } @{ $this->{_as_path} };
+    return $this;
 }
 
-sub striped
-{
- return shift->clone->strip(@_);
+sub strip {
+    my $this = shift;
+    @{ $this->{_as_path} } =
+      grep { (ref $_) !~ /_CONFED_/ } @{ $this->{_as_path} };
+    return $this;
 }
 
-sub aggregate
-{
- my @olist = @_;
- shift(@olist) unless ref $olist[0];
+sub striped {
+    return shift->clone->strip(@_);
+}
 
- # Sets
- my $cset = Net::BGP::ASPath::AS_CONFED_SET->new;
- my $nset  = Net::BGP::ASPath::AS_SET->new;
+sub aggregate {
+    my @olist = @_;
+    shift(@olist) unless ref $olist[0];
 
- # Lists of confed / normal part of paths
- my @clist = map { $_->_confed } @olist;
- my @nlist = map { $_->striped } @olist;
+    # Sets
+    my $cset = Net::BGP::ASPath::AS_CONFED_SET->new;
+    my $nset = Net::BGP::ASPath::AS_SET->new;
 
- my $res = '';
- foreach my $pair ([\@clist,$cset], [\@nlist,$nset])
-  {
-   my ($list,$set) = @{$pair};
-   # Find common head
-   my $head = $list->[0]->_head;
-   foreach my $obj (@{$list}[1..@{$list}-1])
-    {
-     my $s = $obj->_head;
-     $head = _longest_common_head($head,$s);  
-    }; 
+    # Lists of confed / normal part of paths
+    my @clist = map { $_->_confed } @olist;
+    my @nlist = map { $_->striped } @olist;
 
-   # Find tail set
-   foreach my $obj (@{$list})
-    {
-     my $tail = $obj->_tail($head);
-     $tail = '(' . $tail if $tail =~ /^[^\(]*\).*$/; # Fix tail
-     $obj = Net::BGP::ASPath->new($tail);
-     $set->merge($obj);
-    };
-   $head .= ')' if $head =~ /^\([^\)]+$/; # Fix head
-   $res .= "$head $set ";
-  };
+    my $res = '';
+    foreach my $pair ([ \@clist, $cset ], [ \@nlist, $nset ]) {
+        my ($list, $set) = @{$pair};
 
- # Construct result
- return Net::BGP::ASPath->new($res)->cleanup;
+        # Find common head
+        my $head = $list->[0]->_head;
+        foreach my $obj (@{$list}[ 1 .. @{$list} - 1 ]) {
+            my $s = $obj->_head;
+            $head = _longest_common_head($head, $s);
+        }
+
+        # Find tail set
+        foreach my $obj (@{$list}) {
+            my $tail = $obj->_tail($head);
+            $tail = '(' . $tail if $tail =~ /^[^\(]*\).*$/;    # Fix tail
+            $obj = Net::BGP::ASPath->new($tail);
+            $set->merge($obj);
+        }
+        $head .= ')' if $head =~ /^\([^\)]+$/;                 # Fix head
+        $res .= "$head $set ";
+    }
+
+    # Construct result
+    return Net::BGP::ASPath->new($res)->cleanup;
 }
 
 ## Utility functions (not methods!) ##
-sub _longest_common_head
-{
- my ($s1,$s2) = @_;
- my $pos = 0;
- $s1 .= ' ';
- $s2 .= ' ';
- for my $i (0..length($s1)-1)
-  {
-   last unless substr($s1,$i,1) eq substr($s2,$i,1);
-   $pos = $i if substr($s1,$i,1) eq ' ';
-  };
- return substr($s1,0,$pos);
+sub _longest_common_head {
+    my ($s1, $s2) = @_;
+    my $pos = 0;
+    $s1 .= ' ';
+    $s2 .= ' ';
+    for my $i (0 .. length($s1) - 1) {
+        last unless substr($s1, $i, 1) eq substr($s2, $i, 1);
+        $pos = $i if substr($s1, $i, 1) eq ' ';
+    }
+    return substr($s1, 0, $pos);
 }
 
 sub _head
-# Head means the leading non-set part of the path
+
+  # Head means the leading non-set part of the path
 {
- my $this = shift->clone;
- my $ok = 1;
- $this->{_as_path} = [ grep { $ok &&= (ref $_) =~ /_SEQUENCE$/; $_ = undef unless $ok; } @{$this->{_as_path}} ];
- return $this;
+    my $this = shift->clone;
+    my $ok   = 1;
+    $this->{_as_path} =
+      [ grep { $ok &&= (ref $_) =~ /_SEQUENCE$/; $_ = undef unless $ok; }
+          @{ $this->{_as_path} } ];
+    return $this;
 }
 
 sub _tail
-# Tail means everything after the "head" given as argument.
-# The tail is returned as a string. Returns undef if "head" is invalid.
+
+  # Tail means everything after the "head" given as argument.
+  # The tail is returned as a string. Returns undef if "head" is invalid.
 {
- my $thisstr = shift() . " ";
- my $head = shift() . " ";
- $head =~ s/\(/\\(/g;
- $head =~ s/\)/\\)/g;
- return undef unless $thisstr =~ s/^$head//;
- $thisstr =~ s/ $//;
- return $thisstr;
+    my $thisstr = shift() . " ";
+    my $head    = shift() . " ";
+    $head =~ s/\(/\\(/g;
+    $head =~ s/\)/\\)/g;
+    return undef unless $thisstr =~ s/^$head//;
+    $thisstr =~ s/ $//;
+    return $thisstr;
 }
 
-sub asstring
-{
- my $this = shift;
- return join(' ',map { $_->asstring; } @{$this->{_as_path}});
+# For compatability
+sub asstring { 
+    my $this = shift;
+    return $this->as_string(@_);
 }
 
-sub asarray
-{
- my $this = shift;
- my @res;
- foreach my $s (@{$this->{_as_path}})
-  {
-   push(@res,@{$s->asarray});
-  };
- return \@res;
+sub as_string {
+    my $this = shift;
+
+    return $this->_as_string_helper($this->{_as_path});
 }
 
-sub len_equal
-{
- my ($this,$other) = @_;
- return 0 unless defined($other);
- return ($this->length == $other->length) ? 1 : 0;
+sub _as_string_helper {
+    my ($this, $path) = @_;
+
+    return join(' ', map { $_->as_string; } @{ $path });
 }
 
-sub len_notequal
-{
- my ($this,$other) = @_;
- return 1 unless defined($other);
- return ($this->length != $other->length) ? 1 : 0;
+
+sub asarray {
+    my $this = shift;
+    my @res;
+    foreach my $s (@{ $this->{_as_path} }) {
+        push(@res, @{ $s->asarray });
+    }
+    return \@res;
 }
 
-sub len_lessthen
-{
- my ($this,$other) = @_;
- return 0 unless defined($other);
- return ($this->length < $other->length) ? 1 : 0;
+sub len_equal {
+    my ($this, $other) = @_;
+    return 0 unless defined($other);
+    return ($this->length == $other->length) ? 1 : 0;
 }
 
-sub len_greaterthen
-{
- my ($this,$other) = @_;
- return 1 unless defined($other);
- return ($this->length > $other->length) ? 1 : 0;
+sub len_notequal {
+    my ($this, $other) = @_;
+    return 1 unless defined($other);
+    return ($this->length != $other->length) ? 1 : 0;
 }
 
-sub len_compare
-{
- my ($this,$other) = @_;
- return 1 unless defined($other);
- return $this->length <=> $other->length;
+sub len_lessthen {
+    my ($this, $other) = @_;
+    return 0 unless defined($other);
+    return ($this->length < $other->length) ? 1 : 0;
 }
 
-sub equal
-{
- my ($this,$other) = @_;
- return 0 unless defined($other);
- confess "Cannot compare " . (ref $this) . " with a " . (ref $other) . "\n"
-	unless ref $other eq ref $this;
- return $this->asstring eq $other->asstring ? 1 : 0;
+sub len_greaterthen {
+    my ($this, $other) = @_;
+    return 1 unless defined($other);
+    return ($this->length > $other->length) ? 1 : 0;
 }
 
-sub notequal
-{
- my ($this,$other) = @_;
- return 1 unless defined($other);
- return $this->asstring ne $other->asstring ? 1 : 0;
+sub len_compare {
+    my ($this, $other) = @_;
+    return 1 unless defined($other);
+    return $this->length <=> $other->length;
 }
 
-sub length
-{
- my ($this) = @_;
- my $res = 0;
- foreach my $p (@{$this->{_as_path}})
-  {
-   $res += $p->length;
-  };
- return $res;
+sub equal {
+    my ($this, $other) = @_;
+    return 0 unless defined($other);
+    confess "Cannot compare " . (ref $this) . " with a " . (ref $other) . "\n"
+      unless ref $other eq ref $this;
+    return $this->as_string eq $other->as_string ? 1 : 0;
 }
 
+sub notequal {
+    my ($this, $other) = @_;
+    return 1 unless defined($other);
+    return $this->as_string ne $other->as_string ? 1 : 0;
+}
+
+sub length {
+    my ($this) = @_;
+
+    return $this->_length_helper($this->{_as_path});
+}
+
+sub _length_helper {
+    my ($this, $path) = @_;
+
+    my $res = 0;
+    foreach my $p (@{ $path }) {
+        $res += $p->length;
+    }
+    return $res;
+}
 
 ## POD ##
 
@@ -656,7 +480,7 @@ Net::BGP::ASPath - Class encapsulating BGP-4 AS Path information
     use Net::BGP::ASPath;
 
     # Constructor
-    $aspath  = Net::BGP::ASPath->new();
+    $aspath  = Net::BGP::ASPath->new(undef, { as4 => 1 });
     $aspath2 = Net::BGP::ASPath->new([65001,65002]);
     $aspath3 = Net::BGP::ASPath->new("(65001 65002) 65010");
     $aspath4 = Net::BGP::ASPath->new("65001 {65011,65010}");
@@ -686,7 +510,7 @@ Net::BGP::ASPath - Class encapsulating BGP-4 AS Path information
 
     # Accessor Methods
     $length    = $aspath->length;
-    $string    = $aspath->asstring;
+    $string    = $aspath->as_string;
     $array_ref = $aspath->asarray
 
     # In context
@@ -715,16 +539,16 @@ confederation extentions.
 
 =item new() - create a new Net::BGP::ASPath object
 
-    $aspath = Net::BGP::ASPath->new( PATHDATA );
+    $aspath = Net::BGP::ASPath->new( PATHDATA, OPTIONS );
 
 This is the constructor for Net::BGP::ASPath objects. It returns a
-reference to the newly created object. The parameter may be either:
+reference to the newly created object. The first parameter may be either:
 
 =over 4
 
-=item ARRAY
+=item ARRAY_REF
 
-An array of AS numbers inteperted as an AS_PATH_SEQUENCE.
+An array ref containing AS numbers inteperted as an AS_PATH_SEQUENCE.
 
 =item SCALAR
 
@@ -736,7 +560,27 @@ AS_PATH_CONFED_* is writen equally, but encapsulated in "()".
 
 Another ASPath object, in which case a clone is constructed.
 
+=item C<undef>
+
+This will create the ASPath object with empty contents
+
 =back
+
+Following the PATHDATA, the OPTIONS may be specified.  Currently the
+only valid option is c<as4>, which, if true, builds ASPath objects
+usable for talking to an peer that supports 32 bit ASNs.  False, or
+the default value, assumes that the peer does not support 32 bit ASNs,
+which affects the decode routines.  Note that the encode routines
+are not dependent upon this option.
+
+Basically, if as4 is true, AS_PATH is populated from messages assuming
+4 byte ASNs and AS4_PATH is not used.  Encoded AS_PATH attributes also
+assume a 4 byte ASN.
+
+If as4 is false, AS_PATH is populated from messages assuming 2 byte ASNs,
+and, if available, AS4_PATH is used to replace occurences of 23456
+when possible when outputing to user-readable formats.  Encoding routines
+will also allow output of AS4_PATH objects when appropriate.
 
 =back
 
@@ -760,9 +604,9 @@ This method creates an exact copy of the Net::BGP::ASPath object.
 
 Return the path-length used in BGP path selection. This is the sum
 of the lengths of all AS_PATH elements. This does however not include
-AS_PATH_CONFED_* elements.
+AS_PATH_CONFED_* elements and AS_SEGMENTS count as one BGP hop.
 
-=item asstring()
+=item as_string()
 
 Returns the path as a string in same notation as the constructor accept.
 
