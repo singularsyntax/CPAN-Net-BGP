@@ -162,7 +162,7 @@ sub opencallback
     my ($peer) = @_;
 
     $openok = $peer->peer_can_mbgp;
-    $openok &&= $peer->this_can_mbgp;
+    $openok &&= $peer->support_mbgp;
     $openok &&= $peer->peer_can_as4;
     $openok &&= $peer->this_can_as4;
     $openok &&= ref $peer eq 'Net::BGP::Peer';

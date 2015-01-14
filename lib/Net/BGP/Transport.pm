@@ -1185,7 +1185,7 @@ sub _encode_bgp_open_message
         }  else {
             # We are sending the open
 
-            if ( $this->parent->this_can_mbgp ) {
+            if ( $this->parent->support_mbgp ) {
                 $opt .= $this->_encode_capability_mbgp();
             }
             if ( $this->parent->this_can_as4 ) {
