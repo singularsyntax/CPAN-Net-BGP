@@ -13,7 +13,7 @@ use vars qw(
 ## Inheritance and Versioning ##
 
 @ISA     = qw( Exporter );
-$VERSION = '0.15';
+$VERSION = '0.16';
 
 ## General Definitions ##
 
