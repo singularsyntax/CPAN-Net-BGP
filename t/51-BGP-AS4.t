@@ -1,5 +1,10 @@
 #!/usr/bin/perl -wT
 
+# This is essentially the same as 50-BGP, but with AS4 formats
+#
+# It probably would be nicer if it was combined with 50-BGP, rather
+# than a seperate process.
+
 use strict;
 
 use Test::More tests => 24;
@@ -52,12 +57,13 @@ my $listen = new Net::BGP::Peer(
         Listen          => 1,
         Passive         => 1,
         ThisID          => $lh1,
-        ThisAS          => 65001,
+        ThisAS          => 4_200_000_000,
         PeerID          => $lh2,
-        PeerAS          => 65002,
+        PeerAS          => 4_200_000_001,
         PeerPort        => $port,
         AnnounceRefresh => 1,
         SupportMBGP     => 1,
+        SupportAS4      => 1,
         KeepAliveTime   => $keepalive
 );
 ok(ref $listen eq 'Net::BGP::Peer','listing peer construction');
@@ -67,27 +73,28 @@ my $active = new Net::BGP::Peer(
         Listen          => 0,
         Passive         => 0,
         ThisID          => $lh2,
-        ThisAS          => 65002,
+        ThisAS          => 4_200_000_001,
         PeerID          => $lh1,
-        PeerAS          => 65001,
+        PeerAS          => 4_200_000_000,
         PeerPort        => $port,
         AnnounceRefresh => 1,
         SupportMBGP     => 1,
+        SupportAS4      => 1,
         KeepaliveTime   => $keepalive
 );
 ok(ref $active eq 'Net::BGP::Peer','active peer construction');
 
 my $msg = join('',map { pack('H2',$_); } qw (
-	00 00 00 14  40 01 01 00  40 02 06 02  02 FD EB FD
-        EA 40 03 04  0A FF 67 01  18 0A 02 01
-	));
-my $update = Net::BGP::Update->_new_from_msg($msg);
-
+        00 00 00 18  40 01 01 00  40 02 0A 02  02 FA 56 EA
+        02 FA 56 EA  01 40 03 04  0A FF 67 01  18 0A 02 01
+));
+my $update = Net::BGP::Update->_new_from_msg($msg, {as4 => 1});
 my $msg2 = join('',map { pack('H2',$_); } qw (
-	00 00 00 14  40 01 01 00  40 02 06 02  02 FD EB FD
-        EA 40 03 04  0A FF 67 01  18 0A 02 02  18 0A 02 03
-	));
-my $update2 = Net::BGP::Update->_new_from_msg($msg2);
+        00 00 00 18  40 01 01 00  40 02 0A 02  02 FA 56 EA
+        02 FA 56 EA  01 40 03 04  0A FF 67 01  18 0A 02 02
+        18 0A 02 03
+));
+my $update2 = Net::BGP::Update->_new_from_msg($msg2, {as4 => 1});
 
 $listen->add_timer(\&timer,1);
 $listen->set_open_callback(\&opencallback);
@@ -148,16 +155,6 @@ ok($shutlok == 2,'Shutdown listner');
 ok($shutaok == 2,'Shutdown active');
 ok($timerok == 2,'Timer');
 
-
-$bgp->add_peer($active);
-$bgp->add_peer($listen);
-ok(scalar($bgp->peers()) == 2, 'Two peers');
-
-$bgp->remove_peer($active);
-$bgp->remove_peer($listen);
-ok(scalar($bgp->peers()) == 0, 'No peers');
-
-
 ## End of test script - Functions below ##
 
 sub opencallback
@@ -166,6 +163,8 @@ sub opencallback
 
     $openok = $peer->peer_can_mbgp;
     $openok &&= $peer->support_mbgp;
+    $openok &&= $peer->peer_can_as4;
+    $openok &&= $peer->this_can_as4;
     $openok &&= ref $peer eq 'Net::BGP::Peer';
     
     # We're also going to validate open encoding here
@@ -174,29 +173,35 @@ sub opencallback
     # Octet 16-17: Length (starting at marker)
     # Octet 18   : Type (01 = Open)
     # Octet 19   : Version (04 = BGP 4)
-    # Octet 20-21: My ASN (FD E9 = 65001)
+    # Octet 20-21: My ASN (FB A0 = 23456)
     # Octet 22-23: Hold Time (00 5A = 90)
     # Octet 24-27: BGP ID (7F 00 00 01 = 127.0.0.1)
-    # Octet 28   : Optional Param Length (10 = 16 bytes)
-    # Octet 29   : Opt. Param Type (02 = Capability)
+    # Octet 28   : Optional Param Length (18 = 24 bytes)
+    # Octet 29   : Opt. Param Type (02 = Cpaability)
     # Octet 30   :  Opt Param Len (06 = 6 bytes)
     # Octet 31   :  Capability Code (01 = MBGP)
     # Octet 32   :   Capability Length (04 = 4 bytes)
     # Octet 33   :   Address Family (01 = IPv4)
     # Octet 34   :   Reserved Bit (00)
     # Octet 35   :   Address Type (01 = Unicast)
-    # Octet 36   : Opt. Param Type (02 = Capability)
-    # Octet 37   :  Opt Param Len (02 = 2 bytes)
-    # Octet 38   :  Capability Code (02 = Refresh)
-    # Octet 39   :   Capability Length (00 = 0 bytes)
-    # Octet 40   : Opt. Param Type (02 = Capability)
-    # Octet 41   :  Opt Param Len (02 = 2 bytes)
-    # Octet 42   :  Capability Code (80 = Refresh Old/Cisco)
-    # Octet 43   :   Capability Length (00 = 0 bytes)
+    # Octet 36   : Opt. Param Type (02 = Cpaability)
+    # Octet 37   :  Opt Param Len (06 = 6 bytes)
+    # Octet 38   :  Capability Code (hex 41 = AS4)
+    # Octet 39   :   Capability Len (04 = 4 bytes)
+    # Octet 40-43:   AS Number (FA56EA00 = 4_200_000_000)
+    # Octet 44   : Opt. Param Type (02 = Capability)
+    # Octet 45   :  Opt Param Len (02 = 2 bytes)
+    # Octet 46   :  Capability Code (02 = Refresh)
+    # Octet 47   :   Capability Length (00 = 0 bytes)
+    # Octet 48   : Opt. Param Type (02 = Capability)
+    # Octet 49   :  Opt Param Len (02 = 2 bytes)
+    # Octet 50   :  Capability Code (hex 80 = Refresh Old/Cisco)
+    # Octet 51   :   Capability Length (00 = 0 bytes)
     my $desired_open = join('',map { pack('H2',$_); } qw (
         FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
-        00 2D 01 04  FD E9 00 5A  7F 00 00 01  10 02 06 01
-        04 00 01 00  01 02 02 02  00 02 02 80  00
+        00 35 01 04  5B A0 00 5A  7F 00 00 01  18 02 06 01
+        04 00 01 00  01 02 06 41  04 FA 56 EA  00 02 02 02
+        00 02 02 80  00
     ));
     my $sample_open = $peer->transport->_encode_bgp_open_message();
     ok ($sample_open eq $desired_open, "Proper open message encoding");
@@ -246,11 +251,11 @@ sub updatecallback
     }
 
     if ($updateseq == 1) {
-        if ($update->_encode_message ne $msg2) {
+        if ($update->_encode_message({as4 => 1}) ne $msg2) {
             $updateseq = 1000;
         }
     } elsif ($updateseq == 2) {
-        if ($update->_encode_message ne $msg) {
+        if ($update->_encode_message({as4 => 1}) ne $msg) {
             $updateseq = 2000;
         } else {
             $updateok = 1;

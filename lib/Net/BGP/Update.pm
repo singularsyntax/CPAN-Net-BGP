@@ -14,7 +14,7 @@ use vars qw(
 use Net::BGP::NLRI qw( :origin );
 
 @ISA     = qw( Exporter Net::BGP::NLRI );
-$VERSION = '0.15';
+$VERSION = '0.17';
 
 ## Module Imports ##
 
@@ -37,9 +37,16 @@ sub BGP_PATH_ATTR_LOCAL_PREF       { 5 }
 sub BGP_PATH_ATTR_ATOMIC_AGGREGATE { 6 }
 sub BGP_PATH_ATTR_AGGREGATOR       { 7 }
 sub BGP_PATH_ATTR_COMMUNITIES      { 8 }
+sub BGP_PATH_ATTR_AS4_PATH         { 17 }
+sub BGP_PATH_ATTR_AS4_AGGREGATOR   { 18 }
 
 ## BGP Path Attribute Flag Octets ##
 
+# This is the expected bits to be set in the flags section.
+# Note that the PARTIAL is ignored where the flags indicate
+# OPTIONAL + TRANSITIVE, because this can be set to 1 when
+# passing through a router that doesn't understand the
+# meaning of the optional attribute.
 @BGP_PATH_ATTR_FLAGS = (
     0x00, ## TODO: change to undef after warnings enabled
     0x40,
@@ -49,11 +56,25 @@ sub BGP_PATH_ATTR_COMMUNITIES      { 8 }
     0x40,
     0x40,
     0xC0,
-    0xC0
+    0xC0,
+    0x00, ## TODO: change to undef after warnings enabled
+    0x00, ## TODO: change to undef after warnings enabled
+    0x00, ## TODO: change to undef after warnings enabled
+    0x00, ## TODO: change to undef after warnings enabled
+    0x00, ## TODO: change to undef after warnings enabled
+    0x00, ## TODO: change to undef after warnings enabled
+    0x00, ## TODO: change to undef after warnings enabled
+    0x00, ## TODO: change to undef after warnings enabled
+    0xC0, # AS4_PATH
+    0xC0, # AS4_AGGREGATOR
 );
 
 ## RFC 4271, sec 4.3
-our $BGP_PATH_ATTR_FLAG_EXTLEN = 0x10;
+our $BGP_PATH_ATTR_FLAG_OPTIONAL   = 0x80;
+our $BGP_PATH_ATTR_FLAG_TRANSITIVE = 0x40;
+our $BGP_PATH_ATTR_FLAG_PARTIAL    = 0x20;
+our $BGP_PATH_ATTR_FLAG_EXTLEN     = 0x10;
+our $BGP_PATH_ATTR_FLAG_RESERVED   = 0x0F;
 
 ## Per RFC 4271, sec 5.
 ##
@@ -172,11 +193,14 @@ sub ashash
 
 sub _new_from_msg
 {
-    my ($class, $buffer) = @_;
+    my ($class, $buffer, $options) = @_;
+    
+    if (!defined($options)) { $options = {}; }
+    $options->{as4} ||= 0;
 
     my $this = $class->new();
 
-    $this->_decode_message($buffer);
+    $this->_decode_message($buffer, $options);
 
     return $this;
 }
@@ -205,7 +229,10 @@ sub _encode_attr
 
 sub _decode_message
 {
-    my ($this, $buffer) = @_;
+    my ($this, $buffer, $options) = @_;
+    
+    if (!defined($options)) { $options = {}; }
+    $options->{as4} ||= 0;
 
     my $offset = 0;
     my $length;
@@ -237,7 +264,11 @@ sub _decode_message
 
     return if $length == 0;    # withdrawn routes only
 
-    $this->_decode_path_attributes(substr($buffer, $offset, $length));
+    $this->_decode_path_attributes(
+        substr($buffer, $offset, $length),
+        $options
+    );
+
     $offset += $length;
 
     # decode the Network Layer Reachability Information field
@@ -256,13 +287,48 @@ sub _decode_origin
 
 sub _decode_as_path
 {
-    my ($this, $buffer) = @_;
+    my ($this, $buffer, $options) = @_;
 
-    my $path = Net::BGP::ASPath->_new_from_msg($buffer);
+    if (!defined($options)) { $options = {}; }
+    $options->{as4} ||= 0;
+
+    $this->{_as_path_raw} = $buffer;
+
+    my $as4path = '';
+    if ( exists $this->{_as4_path_raw} ) {
+        $as4path = $this->{_as4_path_raw};
+    }
+
+    my $path = Net::BGP::ASPath->_new_from_msg(
+            $buffer,
+            $as4path,
+            $options
+    );
 
     $this->{_as_path} = $path;
-
     $this->{_attr_mask}->[BGP_PATH_ATTR_AS_PATH] ++;
+
+    return ( undef );
+}
+
+# We don't decode the AS4 path, we just stick it in this variable.  That
+# said, if we have already come across the AS_PATH (non AS4), we handle it.
+sub _decode_as4_path
+{
+    my ($this, $buffer) = @_;
+
+    $this->{_as4_path_raw} = $buffer;
+    $this->{_attr_mask}->[BGP_PATH_ATTR_AS4_PATH] ++;
+
+    # If we've already decoded the regular AS path, we need to reprocess
+    # it now that we have an AS4_PATH.
+    if ( defined $this->{_as_path_raw} ) {
+        # We decrement the ref count for the AS_PATH (16 bit) because
+        # this will otherwise trigger an error for having 2 AS_PATH
+        # attributes, when it's really we just called it twice.
+        $this->{_attr_mask}->[BGP_PATH_ATTR_AS_PATH] --;
+        $this->_decode_as_path( $this->{_as_path_raw} );
+    }
 
     return ( undef );
 }
@@ -350,11 +416,64 @@ sub _decode_atomic_aggregate
 
 sub _decode_aggregator
 {
-    my ($this, $buffer) = @_;
+    my ($this, $buffer, $options) = @_;
+
+    if (!defined($options)) { $options = {}; }
+    $options->{as4} ||= 0;
+
     my ($data);
 
-    if ( length($buffer) != 0x06 ) {
-        $data = $this->_encode_attr(BGP_PATH_ATTR_AGGREGATOR, $buffer);
+    if ($options->{as4}) {
+        if ( length($buffer) != 0x08 ) {
+            $data = $this->_encode_attr(BGP_PATH_ATTR_AGGREGATOR, $buffer);
+            Net::BGP::Notification->throw(
+                ErrorCode    => BGP_ERROR_CODE_UPDATE_MESSAGE,
+                ErrorSubCode => BGP_ERROR_SUBCODE_BAD_ATTR_LENGTH,
+                ErrorData    => $data
+            );
+        }
+
+        $this->{_aggregator}->[0] = unpack('N', substr($buffer, 0, 4));
+        $this->{_aggregator}->[1] = inet_ntoa(substr($buffer, 4, 4));
+    } else {
+        if ( length($buffer) != 0x06 ) {
+            $data = $this->_encode_attr(BGP_PATH_ATTR_AGGREGATOR, $buffer);
+            Net::BGP::Notification->throw(
+                ErrorCode    => BGP_ERROR_CODE_UPDATE_MESSAGE,
+                ErrorSubCode => BGP_ERROR_SUBCODE_BAD_ATTR_LENGTH,
+                ErrorData    => $data
+            );
+        }
+
+        $this->{_aggregator}->[0] = unpack('n', substr($buffer, 0, 2));
+        $this->{_aggregator}->[1] = inet_ntoa(substr($buffer, 2, 4));
+    }
+    $this->{_attr_mask}->[BGP_PATH_ATTR_AGGREGATOR] ++;
+
+    if ( $options->{as4} ) { return ( undef ); }
+    if (!exists($this->{_as4_aggregator}->[0])) { return ( undef ); }
+
+    if ($this->{_aggregator}->[0] != 23456) {
+        # Disregard _as4_aggregator if not AS_TRANS, per RFC4893 4.2.3
+        return ( undef );
+    }
+
+    @{ $this->{_aggregator} } = @{ $this->{_as4_aggregator} };
+
+    return ( undef );
+}
+
+sub _decode_as4_aggregator
+{
+    my ($this, $buffer, $options) = @_;
+    
+    if (!defined($options)) { $options = {}; }
+    $options->{as4} ||= 0;
+
+    my ($data);
+
+    if ( length($buffer) != 0x08 ) {
+        $data = $this->_encode_attr(BGP_PATH_ATTR_AS4_AGGREGATOR, $buffer);
         Net::BGP::Notification->throw(
             ErrorCode    => BGP_ERROR_CODE_UPDATE_MESSAGE,
             ErrorSubCode => BGP_ERROR_SUBCODE_BAD_ATTR_LENGTH,
@@ -362,9 +481,19 @@ sub _decode_aggregator
         );
     }
 
-    $this->{_aggregator}->[0] = unpack('n', substr($buffer, 0, 2));
-    $this->{_aggregator}->[1] = inet_ntoa(substr($buffer, 2, 4));
-    $this->{_attr_mask}->[BGP_PATH_ATTR_AGGREGATOR] ++;
+    $this->{_as4_aggregator}->[0] = unpack('N', substr($buffer, 0, 4));
+    $this->{_as4_aggregator}->[1] = inet_ntoa(substr($buffer, 4, 4));
+    $this->{_attr_mask}->[BGP_PATH_ATTR_AS4_AGGREGATOR] ++;
+    
+    if ( $options->{as4} ) { return ( undef ); }
+    if (!exists($this->{_aggregator}->[0])) { return ( undef ); }
+
+    if ($this->{_aggregator}->[0] != 23456) {
+        # Disregard _as4_aggregator if not AS_TRANS, per RFC4893 4.2.3
+        return ( undef );
+    }
+
+    @{ $this->{_aggregator} } = @{ $this->{_as4_aggregator} };
 
     return ( undef );
 }
@@ -400,20 +529,34 @@ sub _decode_communities
 
 sub _decode_path_attributes
 {
-    my ($this, $buffer) = @_;
+    my ($this, $buffer, $options) = @_;
+
+    if (!defined($options)) { $options = {}; }
+    $options->{as4} ||= 0;
+
     my ($offset, $data_length);
     my ($flags, $type, $length, $len_format, $len_bytes, $sub, $data);
     my ($error_data, $ii);
     my @decode_sub = (
-        undef,
-        \&_decode_origin,
-        \&_decode_as_path,
-        \&_decode_next_hop,
-        \&_decode_med,
-        \&_decode_local_pref,
-        \&_decode_atomic_aggregate,
-        \&_decode_aggregator,
-        \&_decode_communities
+        undef,                              # 0
+        \&_decode_origin,                   # 1
+        \&_decode_as_path,                  # 2
+        \&_decode_next_hop,                 # 3
+        \&_decode_med,                      # 4
+        \&_decode_local_pref,               # 5
+        \&_decode_atomic_aggregate,         # 6
+        \&_decode_aggregator,               # 7
+        \&_decode_communities,              # 8
+        undef,                              # 9
+        undef,                              # 10
+        undef,                              # 11
+        undef,                              # 12
+        undef,                              # 13
+        undef,                              # 14
+        undef,                              # 15
+        undef,                              # 16
+        \&_decode_as4_path,                 # 17
+        \&_decode_as4_aggregator,           # 18
     );
 
     $offset = 0;
@@ -445,17 +588,42 @@ sub _decode_path_attributes
         ## do we know how to decode this attribute?
         if (defined $decode_sub[$type])
         {
-            $error_data = substr($buffer, $offset - $len_bytes - 2, $length + $len_bytes + 2);
-            if ( $BGP_PATH_ATTR_FLAGS[$type] != ($flags & ~$BGP_PATH_ATTR_FLAG_EXTLEN) ) {
-                Net::BGP::Notification->throw(
-                    ErrorCode    => BGP_ERROR_CODE_UPDATE_MESSAGE,
-                    ErrorSubCode => BGP_ERROR_SUBCODE_BAD_ATTR_FLAGS,
-                    ErrorData    => $error_data
-                );
+            $error_data = substr(
+                    $buffer,
+                    $offset - $len_bytes - 2,
+                    $length + $len_bytes + 2
+
+            );
+
+            my $flagmasked = $flags;
+            $flagmasked &= ~$BGP_PATH_ATTR_FLAG_EXTLEN;
+            $flagmasked &= ~$BGP_PATH_ATTR_FLAG_RESERVED;
+
+            if ( $BGP_PATH_ATTR_FLAGS[$type] != $flagmasked ) {
+
+                # See RFC4271 Section 5
+                if (   ( $flagmasked & $BGP_PATH_ATTR_FLAG_OPTIONAL )
+                    && ( $flagmasked & $BGP_PATH_ATTR_FLAG_TRANSITIVE )
+                    && ( $BGP_PATH_ATTR_FLAGS[$type] ==
+                        ($flagmasked & ~$BGP_PATH_ATTR_FLAG_PARTIAL)
+                       )
+                ) {
+                    # In this case, the flags only differ in the partial bit
+                    # So it's actually okay.
+                } else {
+                    Net::BGP::Notification->throw(
+                        ErrorCode    => BGP_ERROR_CODE_UPDATE_MESSAGE,
+                        ErrorSubCode => BGP_ERROR_SUBCODE_BAD_ATTR_FLAGS,
+                        ErrorData    => $error_data
+                    );
+                }
+
+                # Watch out for the do-nothing case in the "if" statement
+                # above.
             }
 
             $sub = $decode_sub[$type];
-            $this->$sub(substr($buffer, $offset, $length));
+            $this->$sub(substr($buffer, $offset, $length), $options);
         }
 
         $offset += $length;
@@ -549,7 +717,11 @@ sub _decode_nlri
 
 sub _encode_message
 {
-    my $this = shift();
+    my ($this, $options) = @_;
+
+    if (!defined($options)) { $options = {}; }
+    $options->{as4} ||= 0;
+
     my ($buffer, $withdrawn, $path_attr, $nlri);
 
     # encode the Withdrawn Routes field
@@ -557,7 +729,7 @@ sub _encode_message
     $buffer = pack('n', length($withdrawn)) . $withdrawn;
 
     # encode the Path Attributes field
-    $path_attr = $this->_encode_path_attributes();
+    $path_attr = $this->_encode_path_attributes( $options );
     $buffer .= (pack('n', length($path_attr)) . $path_attr);
 
     # encode the Network Layer Reachability Information field
@@ -607,9 +779,22 @@ sub _encode_origin
 
 sub _encode_as_path
 {
-    my $this = shift();
-    my $as_buffer = $this->{_as_path}->_encode;
-    $this->_encode_attr(BGP_PATH_ATTR_AS_PATH, $as_buffer);
+    my ($this, $options) = @_;
+
+    if (!defined($options)) { $options = {}; }
+    $options->{as4} ||= 0;
+
+    my ($as_buffer, $as4_buffer) = $this->{_as_path}->_encode($options);
+
+    my $output;
+
+    $output = $this->_encode_attr(BGP_PATH_ATTR_AS_PATH, $as_buffer);
+
+    if (defined $as4_buffer) {
+        $output .= $this->_encode_attr(BGP_PATH_ATTR_AS4_PATH, $as4_buffer);
+    }
+
+    return $output;
 }
 
 sub _encode_next_hop
@@ -641,11 +826,36 @@ sub _encode_atomic_aggregate
 
 sub _encode_aggregator
 {
-    my $this = shift();
-    my $aggr = pack('n', $this->{_aggregator}->[0]) .
-        inet_aton($this->{_aggregator}->[1]);
+    my ($this, $options) = @_;
 
-    $this->_encode_attr(BGP_PATH_ATTR_AGGREGATOR, $aggr);
+    if (!defined($options)) { $options = {}; }
+    $options->{as4} ||= 0;
+
+    my ($aggr, $ret);
+
+    if ($options->{as4}) {
+        $aggr = pack('N', $this->{_aggregator}->[0]) .
+            inet_aton($this->{_aggregator}->[1]);
+
+        $ret = $this->_encode_attr(BGP_PATH_ATTR_AGGREGATOR, $aggr);
+    } elsif ($aggr <= 65535) {
+        $aggr = pack('n', $this->{_aggregator}->[0]) .
+            inet_aton($this->{_aggregator}->[1]);
+
+        $ret = $this->_encode_attr(BGP_PATH_ATTR_AGGREGATOR, $aggr);
+    } else {
+        $aggr = pack('n', 23456) .
+            inet_aton($this->{_aggregator}->[1]);
+        
+        $ret = $this->_encode_attr(BGP_PATH_ATTR_AGGREGATOR, $aggr);
+    
+        $aggr = pack('N', $this->{_aggregator}->[0]) .
+            inet_aton($this->{_aggregator}->[1]);
+
+        $ret .= $this->_encode_attr(BGP_PATH_ATTR_AS4_AGGREGATOR, $aggr);
+    }
+
+    return $ret;
 }
 
 sub _encode_communities
@@ -665,14 +875,18 @@ sub _encode_communities
 
 sub _encode_path_attributes
 {
-    my $this = shift();
+    my ($this, $options) = @_;
+
+    if (!defined($options)) { $options = {}; }
+    $options->{as4} ||= 0;
+
     my $buffer;
 
     $buffer = '';
 
     # do not encode path attributes if no NLRI is present
     unless ((defined $this->{_nlri})
-	 && scalar(@{$this->{_nlri}})) {
+         && scalar(@{$this->{_nlri}})) {
         return ( $buffer );
     }
 
@@ -686,7 +900,7 @@ sub _encode_path_attributes
     if ( ! defined($this->{_as_path}) ) {
         carp "mandatory path attribute AS_PATH not defined\n";
     }
-    $buffer .= $this->_encode_as_path();
+    $buffer .= $this->_encode_as_path($options);
 
     # encode the NEXT_HOP path attribute
     if ( ! defined($this->{_next_hop}) ) {
@@ -711,7 +925,7 @@ sub _encode_path_attributes
 
     # encode the AGGREGATOR path attribute
     if ( scalar(@{$this->{_aggregator}}) ) {
-        $buffer .= $this->_encode_aggregator();
+        $buffer .= $this->_encode_aggregator($options);
     }
 
     # encode the COMMUNITIES path attribute

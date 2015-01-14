@@ -209,6 +209,9 @@ sub _get_peer_transport
         $transport->_connected($socket);
     }
 
+    # TODO: handle Mikrotik patch case???
+    # $transport->{_sibling}->_handle_collision_selfdestuct;
+
     return $transport;
 }
 

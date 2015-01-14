@@ -12,7 +12,7 @@ use vars qw(
 ## Inheritance and Versioning ##
 
 @ISA     = qw( Exporter );
-$VERSION = '0.15';
+$VERSION = '0.17';
 
 ## Module Imports ##
 
@@ -63,15 +63,16 @@ sub new
     my ($arg, $value);
 
     my $this = {
-        _as_path      => Net::BGP::ASPath->new,
-        _origin       => IGP,
-        _next_hop     => undef,
-        _med          => undef,
-        _local_pref   => undef,
-        _atomic_agg   => undef,
-        _aggregator   => [],
-        _communities  => [],
-        _attr_mask    => [ @BGP_PATH_ATTR_COUNTS ]
+        _as_path        => Net::BGP::ASPath->new,
+        _origin         => IGP,
+        _next_hop       => undef,
+        _med            => undef,
+        _local_pref     => undef,
+        _atomic_agg     => undef,
+        _aggregator     => [],
+        _as4_aggregator => [],
+        _communities    => [],
+        _attr_mask      => [ @BGP_PATH_ATTR_COUNTS ]
     };
 
     bless($this, $class);
@@ -124,7 +125,7 @@ sub clone
       $clone->{$key} = $proto->{$key};
      }
 
-    foreach my $key (qw(_aggregator _communities _attr_mask ))
+    foreach my $key (qw(_aggregator _communities _attr_mask _as4_aggregator))
      {
       $clone->{$key} = [ @{$proto->{$key}}];
      }

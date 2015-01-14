@@ -1,6 +1,11 @@
 Changes
 lib/Net/BGP.pm
 lib/Net/BGP/ASPath.pm
+lib/Net/BGP/ASPath/AS.pm
+lib/Net/BGP/ASPath/AS_CONFED_SEQUENCE.pm
+lib/Net/BGP/ASPath/AS_CONFED_SET.pm
+lib/Net/BGP/ASPath/AS_SEQUENCE.pm
+lib/Net/BGP/ASPath/AS_SET.pm
 lib/Net/BGP/NLRI.pm
 lib/Net/BGP/Notification.pm
 lib/Net/BGP/Peer.pm
@@ -9,10 +14,8 @@ lib/Net/BGP/Refresh.pm
 lib/Net/BGP/Transport.pm
 lib/Net/BGP/Update.pm
 Makefile.PL
-MANIFEST
-META.yml
+MANIFEST			This list of files
 README
-SIGNATURE
 t/00-Signature.t
 t/01-pod.t
 t/10-ASPathSegment.t
@@ -21,3 +24,4 @@ t/20-NLRI.t
 t/30-Update.t
 t/31-Refresh.t
 t/50-BGP.t
+t/51-BGP-AS4.t
