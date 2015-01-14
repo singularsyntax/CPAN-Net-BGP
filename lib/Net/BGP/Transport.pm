@@ -1170,12 +1170,6 @@ sub _encode_bgp_open_message
     my $opt = '';
 
     if ($this->parent->support_capabilities) {
-        # RFC5492
-        # Format is <2> <capability_len> <cap_code> <data_len>
-
-        # Parameter type 2, length 6, capability 1 with a length of 4
-        # Address family 1 (IPv4), reserved bit 0, type 1 (unicast)
-        $opt .= pack('ccccncc',2,6,1,4,1,0,1) if $this->parent->support_mbgp;
 
         if ( defined($this->{_peer_announced_id}) ) {
             # We received an open from the other end
