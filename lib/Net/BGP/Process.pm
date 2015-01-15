@@ -12,6 +12,8 @@ $VERSION = '0.15';
 ## Module Imports ##
 
 use Carp;
+use IO::Async::Listener;
+use IO::Async::Loop;
 use IO::Async::Signal;
 use IO::Async::Timer::Periodic;
 use Net::BGP::Peer qw( BGP_PORT TRUE FALSE );
