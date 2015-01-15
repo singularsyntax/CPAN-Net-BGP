@@ -1429,6 +1429,8 @@ The parent Net::BGP::Peer object.
 
 =back
 
+=back
+
 =head1 ACCESSOR METHODS
 
 =over 4
