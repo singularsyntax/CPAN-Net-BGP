@@ -23,5 +23,6 @@ t/11-ASPath.t
 t/20-NLRI.t
 t/30-Update.t
 t/31-Refresh.t
+t/32-Open.t
 t/50-BGP.t
 t/51-BGP-AS4.t
