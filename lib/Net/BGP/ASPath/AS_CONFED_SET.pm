@@ -6,7 +6,10 @@ use Net::BGP::ASPath::AS_SET;
 
 use strict;
 
+## Inheritance and Versioning ##
+
 @Net::BGP::ASPath::AS_CONFED_SET::ISA = qw( Net::BGP::ASPath::AS_SET );
+our $VERSION = '0.16';
 
 sub type {
     return 4;
