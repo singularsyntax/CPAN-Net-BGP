@@ -1337,17 +1337,27 @@ sub _decode_capabilities
 
     $this->{'_peer_refresh'} = TRUE;
 
-    if (length($value) < 2) {
-        $this->_error(BGP_ERROR_CODE_OPEN_MESSAGE,
-            BGP_ERROR_SUBCODE_BAD_OPT_PARAMETER);
+    while (length($value) > 0) {
+
+        if (length($value) < 2) {
+            $this->_error(BGP_ERROR_CODE_OPEN_MESSAGE,
+                BGP_ERROR_SUBCODE_BAD_OPT_PARAMETER);
+            return;
+        }
+
+        my ($type, $len) = unpack('cc', substr($value, 0, 2));
+        my $data = substr($value, 2, $len);
+
+        $this->_decode_one_capability($type, $len, $data);
+
+        $value = substr($value, 2+$len);
     }
 
-    my ($type, $len) = unpack('cc', substr($value, 0, 2));
+}
 
-    my $data = '';
-    if (length($value) > 2) {
-       $data = substr($value, 2);
-    }
+sub _decode_one_capability {
+    my ($this, $type, $len, $data) = @_;
+
     if (length($data) != $len) {
         $this->_error(BGP_ERROR_CODE_OPEN_MESSAGE,
             BGP_ERROR_SUBCODE_BAD_OPT_PARAMETER);
