@@ -29,6 +29,8 @@ Revision history for Perl extension Net::BGP.
           array reference form, but code didn't.  Added support to code for
           new ASPaths to be specified by array references (they create an
           AS_SEGMENT now, as expected from docs).
+        - Bugfix: Support receipt of multiple capabilities in a single open
+          message (BIRD requires this).
 
 0.15    2014-12-18
         - Add configuration for whether or not to send capability
