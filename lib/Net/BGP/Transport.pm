@@ -558,7 +558,7 @@ sub _trigger_post_transition_action
     # the single current use case of firing the ESTABLISHED callback...
 
     if (($pre_state == BGP_STATE_OPEN_CONFIRM) && ($pos_state == BGP_STATE_ESTABLISHED)) {
-        $this->parent->established_callback();
+        $this->_parent->established_callback();
     }
 }
 
@@ -1087,7 +1087,7 @@ sub _encode_bgp_open_message
     # encode optional parameters and length
     my $opt = '';
 
-    if ($this->parent->support_capabilities) {
+    if ($this->_parent->support_capabilities) {
 
         if ( defined($this->{_peer_announced_id}) ) {
             # We received an open from the other end
@@ -1103,17 +1103,17 @@ sub _encode_bgp_open_message
         }  else {
             # We are sending the open
 
-            if ( $this->parent->support_mbgp ) {
+            if ( $this->_parent->support_mbgp ) {
                 $opt .= $this->_encode_capability_mbgp();
             }
-            if ( $this->parent->this_can_as4 ) {
+            if ( $this->_parent->this_can_as4 ) {
                 $opt .= $this->_encode_capability_as4();
             }
 
         }
 
         # Both the standard (2) and Cisco (128) capabilities are sent
-        if ($this->parent->this_can_refresh) {
+        if ($this->_parent->this_can_refresh) {
             $opt .= $this->_encode_capability(BGP_CAPABILITY_REFRESH, '');
             $opt .= $this->_encode_capability(BGP_CAPABILITY_REFRESH_OLD, '');
         }
@@ -1128,10 +1128,10 @@ sub _encode_bgp_open_message
     $buffer = pack('n', $this->{_hold_time}) . $buffer;
 
     # encode local Autonomous System number
-    if ($this->parent->this_as > 65535) {
+    if ($this->_parent->this_as > 65535) {
         $buffer = pack('n', 23456) . $buffer;
     } else {
-        $buffer = pack('n', $this->parent->this_as) . $buffer;
+        $buffer = pack('n', $this->_parent->this_as) . $buffer;
     }
 
     # encode BGP version
@@ -1157,7 +1157,7 @@ sub _encode_capability_as4
     my $this = shift;
 
     # Capability 65 with data of the ASN
-    my $cap = pack('N', $this->parent->this_as());
+    my $cap = pack('N', $this->_parent->this_as());
     my $opt = $this->_encode_capability(BGP_CAPABILITY_AS4, $cap);
 
     return $opt;
@@ -1201,8 +1201,8 @@ sub _decode_bgp_open_message
 
     # decode and validate remote Autonomous System number
     $as = unpack('n', substr($buffer, 1, 2));
-    if ( $as != $this->parent->peer_as ) {
-        if ($this->parent->peer_as < 65536) {
+    if ( $as != $this->_parent->peer_as ) {
+        if ($this->_parent->peer_as < 65536) {
             $this->_error(BGP_ERROR_CODE_OPEN_MESSAGE,
                           BGP_ERROR_SUBCODE_BAD_PEER_AS);
         } elsif ($as != 23456) {
@@ -1300,13 +1300,13 @@ sub _decode_one_capability {
         }
    
         my $as = unpack('N', $data); 
-        if ($as != $this->parent->peer_as) {
+        if ($as != $this->_parent->peer_as) {
             $this->_error(BGP_ERROR_CODE_OPEN_MESSAGE,
                 BGP_ERROR_SUBCODE_BAD_PEER_AS);
         }
 
         # Both ends must support this. 
-        if ( $this->parent->this_can_as4 ) {
+        if ( $this->_parent->this_can_as4 ) {
             $this->{_peer_as4} = TRUE;
         }
     }
