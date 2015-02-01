@@ -13,7 +13,7 @@ WriteMakefile(
     'PREREQ_PM'         => {
         'IO::Select'    => 0,
         'IO::Socket'    => 0,
-        'List::Util'    => 1.01, # Actully Scalar::Util - but no version there!
+        'List::Util'    => 1.41
     },
     'TEST_REQUIRES'     => {
         'Test::Harness' => '2.00', # ?

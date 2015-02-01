@@ -16,6 +16,7 @@ use IO::Async::Listener;
 use IO::Async::Loop;
 use IO::Async::Signal;
 use IO::Async::Timer::Periodic;
+use List::Util qw( any );
 use Net::BGP::Peer qw( BGP_PORT TRUE FALSE );
 
 ## Socket Constants ##
@@ -233,10 +234,24 @@ sub _detach_transport
 {
     my ($this, $transport) = @_;
 
-    $this->{_event_loop}->remove($transport->{_connect_retry_timer});
-    $this->{_event_loop}->remove($transport->{_hold_timer});
-    $this->{_event_loop}->remove($transport->{_keep_alive_timer});
-    $this->{_event_loop}->remove($transport);
+    # TODO: none of this may not be necessary if all event loop cleanup is handled
+    #       cleanly within Transport.pm
+
+    if ( any { $_ eq $transport->{_connect_retry_timer} } $this->{_event_loop}->notifiers() ) {
+        $this->{_event_loop}->remove($transport->{_connect_retry_timer});
+    }
+
+    if ( any { $_ eq $transport->{_hold_timer} } $this->{_event_loop}->notifiers() ) {
+        $this->{_event_loop}->remove($transport->{_hold_timer});
+    }
+
+    if ( any { $_ eq $transport->{_keep_alive_timer} } $this->{_event_loop}->notifiers() ) {
+        $this->{_event_loop}->remove($transport->{_keep_alive_timer});
+    }
+
+    if ( any { $_ eq $transport } $this->{_event_loop}->notifiers() ) {
+        $this->{_event_loop}->remove($transport);
+    }
 }
 
 ## POD ##
