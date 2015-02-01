@@ -39,6 +39,7 @@ sub BGP_VERSION_4 {   4 }
 
 use Scalar::Util qw( weaken );
 use Exporter;
+use IO::Async::Timer::Periodic;
 use IO::Socket;
 use Carp;
 use Carp qw(cluck);
@@ -99,6 +100,7 @@ sub new
         _local_as              => 0,
         _peer_as               => 0,
         _user_timers           => {},
+        _event_loop            => undef,
         _transport             => undef,
         _listen                => TRUE,
         _passive               => FALSE,
@@ -404,28 +406,44 @@ sub set_error_callback
     $this->{_error_callback} = $callback;
 }
 
+##
+# DEPRECATED
+#
 sub add_timer
 {
     my ($this, $callback, $timeout) = @_;
-    my $timer;
+    my $timer = IO::Async::Timer::Periodic->new(
+        interval => $timeout,
+        on_tick  => sub {
+            &{ $callback }($this);
+        }
+    );
 
-    $timer = {
-        _timer    => $timeout,
-        _timeout  => $timeout,
-        _callback => $callback,
-    };
+    if ( defined($this->{_event_loop}) ) {
+        $timer->start();
+        $this->{_event_loop}->add($timer);
+    }
 
-    $this->{_user_timers}->{$timer} = $timer;
+    $this->{_user_timers}->{$callback} = $timer;
 }
 
+##
+# DEPRECATED
+#
 sub remove_timer
 {
     my ($this, $callback) = @_;
     my ($key, $timer);
 
     foreach $key ( keys(%{$this->{_user_timers}}) ) {
-        $timer = $this->{_user_timers}->{$key};
-        if ( $timer->{_callback} == $callback ) {
+        if ( $key eq $callback ) {
+            $timer = $this->{_user_timers}->{$key};
+
+            if ( defined($this->{_event_loop}) ) {
+                $timer->stop();
+                $this->{_event_loop}->remove($timer);
+            }
+
             delete $this->{_user_timers}->{$key};
         }
     }

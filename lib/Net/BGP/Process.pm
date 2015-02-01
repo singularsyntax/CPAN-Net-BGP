@@ -73,6 +73,12 @@ sub add_peer
     if ( defined($this->{_event_loop}) ) {
         $this->_io_async_init_listen_socket();
         $this->_attach_transport($peer->transport());
+
+        $peer->{_event_loop} = $this->{_event_loop};
+        foreach my $timer ( values(%{ $peer->{_user_timers} }) ) {
+            $timer->start();
+            $this->{_event_loop}->add($timer);
+        }
     }
 }
 
@@ -86,6 +92,12 @@ sub remove_peer
         delete $this->{_peer_list}->{$peer};
     }
 
+    foreach my $timer ( values(%{ $peer->{_user_timers} }) ) {
+        $timer->stop();
+        $this->{_event_loop}->remove($timer);
+    }
+
+    $peer->{_event_loop} = undef;
     $this->_detach_transport($peer->transport());
 
     # Return from event loop when there are no more peers
