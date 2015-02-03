@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 24;
+use Test::More tests => 29;
 
 # Use
 use_ok('Net::BGP');
@@ -13,6 +13,9 @@ use_ok('Net::BGP::Notification');
 use_ok('Net::BGP::Refresh');
 use_ok('Net::BGP::Peer');
 use_ok('Net::BGP::Process');
+
+use_ok('IO::Async::Loop');
+use_ok('IO::Async::Timer::Countdown');
 
 # What's happening here?
 # ======================
@@ -40,10 +43,13 @@ my $port = 10179; # > 1024 to allow non-root execution
 my $keepalive = 5; # To allow faster execution. Must long enough to allow code to execute!
 
 # Construction
+my $event_loop = IO::Async::Loop->new();
 my $bgp = new Net::BGP::Process(
-	Port	=> $port
-	);
+    Port      => $port,
+    EventLoop => $event_loop
+);
 
+ok(defined($event_loop), 'event loop construction');
 ok(ref $bgp eq 'Net::BGP::Process','process construction');
 
 
@@ -113,18 +119,23 @@ my $updateseq = 0;
 
 print "# Main BGP test may take between $keepalive and " . $keepalive*3 . " seconds\n";
 
-eval
- {
-  local $SIG{ALRM} = sub
-   {
-    $bgp->remove_peer($listen);
-    $bgp->remove_peer($active);
-    die "time-out\n";
-   };
-  alarm $keepalive*3-1;
-  $bgp->event_loop();
-  alarm 0;
- };
+my $timer = IO::Async::Timer::Countdown->new(
+    delay => ($keepalive * 3 - 1),
+    on_expire => sub {
+        $bgp->remove_peer($listen);
+        $bgp->remove_peer($active);
+        die "time-out\n";
+    },
+    remove_on_expire => 1
+);
+
+$timer->start();
+$event_loop->add($timer);
+
+eval {
+    $bgp->event_loop();
+    $timer->stop();
+};
 
 if ($@)
  {
@@ -295,11 +306,13 @@ sub notifcallback
   {
    $shutlok = $error->error_code() == 6;
    $shutlok &&= $error->error_subcode() == 0;
+   $timer->stop();
+   $event_loop->remove($timer);
    $bgp->remove_peer($peer);
   }
  elsif ($peer eq $active)
   {
-   fail('Acrive peer in notification-callback');
+   fail('Active peer in notification-callback');
   }
  else
   {
