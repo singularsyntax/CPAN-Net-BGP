@@ -209,7 +209,6 @@ sub _cleanup
 
     if ( defined($this->{_sig_pipe}) ) {
         $this->{_event_loop}->remove($this->{_sig_pipe});
-        $this->{_event_loop}->remove($this->{_sig_pipe});
         $this->{_sig_pipe} = undef;
 
         # When we add our SIGPIPE handler, IO::Async adds its own
