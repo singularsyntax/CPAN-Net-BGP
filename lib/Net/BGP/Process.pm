@@ -37,7 +37,8 @@ sub new
         _listen_addr    => INADDR_ANY,
         _listen_port    => BGP_PORT,
         _peer_addr      => {},
-        _peer_list      => {}
+        _peer_list      => {},
+        _sig_pipe       => undef
     };
 
     while ( defined($arg = shift()) ) {
@@ -102,6 +103,7 @@ sub remove_peer
 
     # Return from event loop when there are no more peers
     if ( scalar(keys(%{$this->{_peer_list}})) == 0 ) {
+        $this->_cleanup();
         if ( scalar($this->{_event_loop}->notifiers()) == 0 ) {
             $this->{_event_loop}->stop();
         }
@@ -139,6 +141,7 @@ sub _io_async_init_event_loop
         }
     );
 
+    $this->{_sig_pipe} = $sigpipe_handler;
     $this->{_event_loop}->add($sigpipe_handler);
 }
 
@@ -202,6 +205,22 @@ sub _cleanup
     if ( defined($this->{_listener}) ) {
         $this->{_listener}->close();
         $this->{_listener} = undef;
+    }
+
+    if ( defined($this->{_sig_pipe}) ) {
+        $this->{_event_loop}->remove($this->{_sig_pipe});
+        $this->{_event_loop}->remove($this->{_sig_pipe});
+        $this->{_sig_pipe} = undef;
+
+        # When we add our SIGPIPE handler, IO::Async adds its own
+        # for some reason. Clean it up as well...
+
+        foreach my $notifier ( $this->{_event_loop}->notifiers() ) {
+            if ( $notifier->notifier_name() eq 'sigpipe' ) {
+                $this->{_event_loop}->remove($notifier);
+                last;
+            }
+        }
     }
 }
 
