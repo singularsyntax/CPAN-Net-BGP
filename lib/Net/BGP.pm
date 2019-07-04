@@ -114,7 +114,7 @@ and Net::BGP::Notification
 
 =head1 AUTHOR
 
-Stephen J. Scheck <code@neurosphere.com>
+Stephen J. Scheck <sscheck@cpan.org>
 
 =cut
 

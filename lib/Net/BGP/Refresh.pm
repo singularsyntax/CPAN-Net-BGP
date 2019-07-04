@@ -199,7 +199,7 @@ B<Net::BGP::Notification>, B<Net::BGP::Update>
 
 =head1 AUTHOR
 
-Stephen J. Scheck <code@neurosphere.com>
+Stephen J. Scheck <sscheck@cpan.org>
 
 =cut
 
