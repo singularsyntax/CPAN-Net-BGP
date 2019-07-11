@@ -1469,7 +1469,7 @@ Net::BGP::Peer, Net::BGP, Net::BGP::Update, Net::BGP::Refresh
 =head1 AUTHOR
 
 Stephen J. Scheck <sscheck@cpan.org> in original Peer.pm form
-Martin Lorensen <lorensen@cpan.org> seperated into Transport.pm
+Martin Lorensen <lorensen@cpan.org> separated into Transport.pm
 
 =cut
 
