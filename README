@@ -26,9 +26,10 @@ DEPENDENCIES
 
 This module requires these other modules and libraries:
 
-  List::Util
+  IO::Async
   IO::Select
   IO::Socket
+  List::Util
 
 For the test suite to work, additional these modules and
 libraries are need:
