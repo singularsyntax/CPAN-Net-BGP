@@ -660,7 +660,8 @@ sub _handle_socket_read_ready
 
     unless (defined $socket) {
       warn $this->parent->asstring . ": Connection lost - Connection is fully shutdown now\n";
-      $this->_kill_session;
+      $this->_close_session();
+      $this->parent->reset_callback();
       return;
     }
 
