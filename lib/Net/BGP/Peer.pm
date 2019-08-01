@@ -107,7 +107,7 @@ sub new
         _support_capabilities  => TRUE,
         _support_mbgp          => TRUE,
         _support_as4           => FALSE,
-        _userdata              => undef,
+        _opaque_data           => undef,
         _open_callback         => undef,
         _established_callback  => undef,
         _keepalive_callback    => undef,
@@ -154,8 +154,8 @@ sub new
         elsif ( $arg =~ /^refreshcallback$/i ) {
             $this->{_refresh_callback} = $value;
         }
-        elsif ( $arg =~ /^userdata$/i ) {
-            $this->{_userdata} = $value;
+        elsif ( $arg =~ /^opaquedata$/i ) {
+            $this->{_opaque_data} = $value;
         }
         elsif ( $arg =~ /^refresh$/i ) {
             warnings::warnif(
@@ -356,12 +356,12 @@ sub is_established
     return ( $this->transport->is_established );
 }
 
-sub userdata
+sub opaque_data
 {
-    my ($this, $userdata) = @_;
-    my $oldvalue = $this->{_userdata};
-    $this->{_userdata} = $userdata if defined($userdata);
-    return ( $oldvalue );
+    my ($this, $opaque_data) = @_;
+    my $old_value = $this->{_opaque_data};
+    $this->{_opaque_data} = $opaque_data if defined($opaque_data);
+    return ( $old_value );
 }
 
 sub set_open_callback
@@ -582,7 +582,7 @@ Net::BGP::Peer - Class encapsulating BGP-4 peering session state and functionali
         SupportCapabilities  => 1,
         SupportMBGP          => 1,
         SupportAS4           => 1,
-        UserData             => $myref
+        OpaqueData           => $my_ref,
         OpenCallback         => \&my_open_callback,
         KeepaliveCallback    => \&my_keepalive_callback,
         UpdateCallback       => \&my_update_callback,
@@ -604,8 +604,8 @@ Net::BGP::Peer - Class encapsulating BGP-4 peering session state and functionali
     $this_as = $peer->this_as();
     $peer_id = $peer->peer_id();
     $peer_as = $peer->peer_as();
-    $myref   = $peer->userdata();
-    $myref   = $peer->userdata($newref);
+    $my_ref  = $peer->opaque_data();
+    $my_ref  = $peer->opaque_data($new_ref);
 
     $i_will  = $peer->support_capabilities();
 
@@ -758,13 +758,13 @@ to TRUE (on the listening connection) whenever the appropriate OPEN capability
 is received.  Note that the B<SupportCapabilities> must be true for this to
 be sent.  This defaults to FALSE.
 
-=head2 UserData
+=head2 OpaqueData
 
-This paramemter is an optional scalar that will be kept as part of the
-B<NET::BGP::Peer> and can be queried by the callback routines when they
-recieve a peer hashref - see B<userdata>. This allows extra data to be
-stored with the peer.  The contents of this are completely ignored by
-B<NET::BGP::Peer>.    This defaults to I<undef>.
+This parameter is an optional scalar that will be kept as part of the
+B<Net::BGP::Peer> and can be queried by the callback routines when they
+receive a peer hashref - see B<opaque_data>. This allows extra data to be
+stored with the peer. The contents of this are completely ignored by
+B<Net::BGP::Peer>. This defaults to I<undef>.
 
 =head2 OpenCallback
 
@@ -889,14 +889,14 @@ These are accessor methods for the corresponding constructor named parameters.
 They retrieve the values set when the object was created, but the values cannot
 be changed after object construction. Hence, they take no arguments.
 
-I<userdata()>
+I<opaque_data()>
 
-    $peer->userdata();
-    $peer->userdata($newref);
+    $peer->opaque_data();
+    $peer->opaque_data($new_ref);
 
 This method can be used to both query (no argument) or set (with an argument)
-the userdata held with the peer method. The method returns the old userdata
-scalar (which is the current value if not set).
+the opaque data held with the peer object. The method returns the old opaque data
+scalar (which is the current value if not provided).
 
 I<is_established()>
 
