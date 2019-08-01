@@ -838,7 +838,7 @@ sub _encode_aggregator
             inet_aton($this->{_aggregator}->[1]);
 
         $ret = $this->_encode_attr(BGP_PATH_ATTR_AGGREGATOR, $aggr);
-    } elsif ($aggr <= 65535) {
+    } elsif ($this->{_aggregator} <= 65535) {
         $aggr = pack('n', $this->{_aggregator}->[0]) .
             inet_aton($this->{_aggregator}->[1]);
 
