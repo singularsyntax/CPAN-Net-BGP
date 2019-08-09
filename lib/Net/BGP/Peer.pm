@@ -743,14 +743,14 @@ unsupported capability if this is the case).  This defaults to TRUE.
 
 =head2 SupportMBGP
 
-This parameter specifies whether the B<NET::BGP::Peer> will attempt to
+This parameter specifies whether the B<Net::BGP::Peer> will attempt to
 negotiate MBGP.  Quagga (and probably others) need this if you want to send
 the REFRESH capability. Today this just indicates support for IPv4 Unicast.
 This defaults to TRUE.  This has no effect if SupportCapabilities is FALSE.
 
 =head2 SupportAS4
 
-This paramemter specifies whether outgoing connections from B<NET::BGP::Peer>
+This parameter specifies whether outgoing connections from the B<Net::BGP::Peer>
 will attempt to negotiate AS4 (32 bit ASNs). For received connections, this
 parameter has no effect - it only determines whether or not AS4 is negotiated
 during outgoing connection.  For received connections, this will be changed
