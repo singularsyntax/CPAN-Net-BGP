@@ -107,10 +107,33 @@ using the module will be run with root priviliges (which is necessary if
 programs want to modify the kernel routing table or bind to the well-known
 BGP port 179).
 
+=head1 PROTOCOL SUPPORT
+
+=over
+
+=item L<RFC 1771|https://tools.ietf.org/html/rfc1771>
+
+=back
+
 =head1 SEE ALSO
 
-RFC 1771, and the perldocs for Net::BGP::Process, Net::BGP::Peer, Net::BGP::Update,
-and Net::BGP::Notification
+=over
+
+=item L<Net::BGP::Process>
+
+=item L<Net::BGP::Peer>
+
+=item L<Net::BGP::Update>
+
+=item L<Net::BGP::Refresh>
+
+=item L<Net::BGP::ASPath>
+
+=item L<Net::BGP::NLRI>
+
+=item L<Net::BGP::Notification>
+
+=back
 
 =head1 AUTHOR
 
