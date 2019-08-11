@@ -669,3 +669,5 @@ Martin Lorensen <bgp@martin.lorensen.dk>
 =cut
 
 ## End Package Net::BGP::ASPath ##
+
+1;
