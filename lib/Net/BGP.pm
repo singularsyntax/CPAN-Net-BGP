@@ -111,7 +111,11 @@ BGP port 179).
 
 =over
 
-=item L<RFC 1771|https://tools.ietf.org/html/rfc1771>
+=item L<RFC 1771 (BGP-4)|https://tools.ietf.org/html/rfc1771>
+=item L<RFC 1997 (BGP Communities Attribute)|https://tools.ietf.org/html/rfc1997>
+=item L<RFC 2918 (Route Refresh Capability for BGP-4)|https://tools.ietf.org/html/rfc2918>
+=item L<RFC 4893 (BGP Support for Four-octet AS Number Space)|https://tools.ietf.org/html/rfc4893>
+=item L<RFC 5492 (Capabilities Advertisement with BGP-4)|https://tools.ietf.org/html/rfc5492>
 
 =back
 
