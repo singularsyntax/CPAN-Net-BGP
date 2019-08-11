@@ -49,12 +49,12 @@ API provided by the module.
 
 The module takes an object-oriented approach to abstracting the operations
 of the BGP protocol. It supports multiple peering sessions and each peer
-corresponds to one instance of a B<Net::BGP::Peer> object. The details of
+corresponds to one instance of a L<Net::BGP::Peer> object. The details of
 maintaining each peering session are handled and coordinated by an instance
-of a B<Net::BGP::Process> object. BGP UPDATE messages and the routing
-information they represent are encapsulated by B<Net::BGP::Update> objects.
+of a L<Net::BGP::Process> object. BGP UPDATE messages and the routing
+information they represent are encapsulated by L<Net::BGP::Update> objects.
 Whenever protocol errors occur and a BGP NOTIFICATION is sent or received,
-programs can determine the details of the error via B<Net::BGP::Notification>
+programs can determine the details of the error via L<Net::BGP::Notification>
 objects.
 
 The module interacts with client programs through the paradigm of callback
