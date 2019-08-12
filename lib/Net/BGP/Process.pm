@@ -426,7 +426,23 @@ in one of the callback or timer functions).
 
 =head1 SEE ALSO
 
-Net::BGP, Net::BGP::Peer, Net::BGP::Update, Net::BGP::Notification
+=over
+
+=item L<Net::BGP>
+
+=item L<Net::BGP::Peer>
+
+=item L<Net::BGP::Update>
+
+=item L<Net::BGP::Refresh>
+
+=item L<Net::BGP::ASPath>
+
+=item L<Net::BGP::NLRI>
+
+=item L<Net::BGP::Notification>
+
+=back
 
 =head1 AUTHOR
 

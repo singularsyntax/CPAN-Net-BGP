@@ -659,8 +659,23 @@ Returns the aggregated object. The objects self are not modified.
 
 =head1 SEE ALSO
 
-B<RFC 1771>, B<RFC 1997>, Net::BGP, Net::BGP::Process, Net::BGP::Peer,
-Net::BGP::Notification, Net::BGP::NLRI, Net::BGP::Update
+=over
+
+=item L<Net::BGP>
+
+=item L<Net::BGP::Process>
+
+=item L<Net::BGP::Peer>
+
+=item L<Net::BGP::Update>
+
+=item L<Net::BGP::Refresh>
+
+=item L<Net::BGP::NLRI>
+
+=item L<Net::BGP::Notification>
+
+=back
 
 =head1 AUTHOR
 

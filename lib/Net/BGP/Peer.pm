@@ -1049,8 +1049,23 @@ system, or some combination of these or none.
 
 =head1 SEE ALSO
 
-Net::BGP, Net::BGP::Process, Net::BGP::Update, Net::BGP::Transport,
-Net::BGP::Refresh, Net::BGP::Notification
+=over
+
+=item L<Net::BGP>
+
+=item L<Net::BGP::Process>
+
+=item L<Net::BGP::Update>
+
+=item L<Net::BGP::Refresh>
+
+=item L<Net::BGP::ASPath>
+
+=item L<Net::BGP::NLRI>
+
+=item L<Net::BGP::Notification>
+
+=back
 
 =head1 AUTHOR
 
