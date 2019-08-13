@@ -87,17 +87,17 @@ session, house-keeping, etc.
 =head1 BUGS
 
 The connection collision resolution code is broken. As currently implemented,
-whenever a connection is received from a peer, the B<Net::BGP::Peer> object
+whenever a connection is received from a peer, the F<Net::BGP::Peer> object
 is cloned and each peer object proceeds through the session establishment
 process until the collision resolution procedure is reached. At this point, if
 the cloned object is chosen by the collison resolution procedure, the original
 peer object is destroyed, leaving the cloned object. Unfortunately, a user
 program will only have a reference to the original peer object it created and
 will have no way of accessing the cloned object. It is therefore recommended
-that B<Net::BGP::Peer> objects be instantiated with the B<Listen> parameter
+that F<Net::BGP::Peer> objects be instantiated with the I<Listen> parameter
 set to a false value. This prevents the peer object from receiving connections
 from its BGP peer, although it will continue actively attempting to establish
-sessions. This problem will be addressed in a future revision of B<Net::BGP>.
+sessions. This problem will be addressed in a future revision of F<Net::BGP>.
 
 As an initial revision, the code has not been subjected to a thorough security
 audit. It is possible and likely that exploitable code exists in the packet
