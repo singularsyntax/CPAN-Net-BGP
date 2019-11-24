@@ -15,7 +15,7 @@ $VERSION = '0.17';
 
 =head1 NAME
 
-Net::BGP - Border Gateway Protocol version 4 speaker/listener library
+C<Net::BGP> - Border Gateway Protocol version 4 speaker/listener library
 
 =head1 SYNOPSIS
 
@@ -65,7 +65,7 @@ UPDATE message is received from a peer, the module handles the details of
 decoding the message, validating it, and encapsulating it in an object and
 passing the object to the specific callback function supplied by the user
 for UPDATE message handling. The callback function is free to do whatever
-with the object - it might send a Net::BGP::Update object to other peers
+with the object - it might send a L<Net::BGP::Update> object to other peers
 as UPDATE messages, perhaps after modifying some of the UPDATE attributes,
 log the routing information to a file, or do nothing at all. The
 possibilities for implementing routing policy via such a mechanism are
@@ -87,17 +87,17 @@ session, house-keeping, etc.
 =head1 BUGS
 
 The connection collision resolution code is broken. As currently implemented,
-whenever a connection is received from a peer, the F<Net::BGP::Peer> object
+whenever a connection is received from a peer, the L<Net::BGP::Peer> object
 is cloned and each peer object proceeds through the session establishment
 process until the collision resolution procedure is reached. At this point, if
 the cloned object is chosen by the collison resolution procedure, the original
 peer object is destroyed, leaving the cloned object. Unfortunately, a user
 program will only have a reference to the original peer object it created and
 will have no way of accessing the cloned object. It is therefore recommended
-that F<Net::BGP::Peer> objects be instantiated with the I<Listen> parameter
+that L<Net::BGP::Peer> objects be instantiated with the I<Listen> parameter
 set to a false value. This prevents the peer object from receiving connections
 from its BGP peer, although it will continue actively attempting to establish
-sessions. This problem will be addressed in a future revision of F<Net::BGP>.
+sessions. This problem will be addressed in a future revision of C<Net::BGP>.
 
 As an initial revision, the code has not been subjected to a thorough security
 audit. It is possible and likely that exploitable code exists in the packet

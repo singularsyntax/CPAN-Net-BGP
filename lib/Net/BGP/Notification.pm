@@ -159,7 +159,7 @@ sub error_data
 
 =head1 NAME
 
-Net::BGP::Notification - Class encapsulating BGP-4 NOTIFICATION message
+C<Net::BGP::Notification> - Class encapsulating BGP-4 NOTIFICATION message
 
 =head1 SYNOPSIS
 
@@ -180,17 +180,17 @@ Net::BGP::Notification - Class encapsulating BGP-4 NOTIFICATION message
 This module encapsulates the data contained in a BGP-4 NOTIFICATION message.
 It provides a constructor, and accessor methods for each of the Error Code,
 Error Subcode, and Error Data fields of a NOTIFICATION. It is unlikely that
-user programs will need to instantiate B<Net::BGP::Notification> objects
+user programs will need to instantiate C<Net::BGP::Notification> objects
 directly. However, when an error occurs and a NOTIFICATION message is sent
-or received by a BGP peering session established with the B<Net::BGP>
-module, a reference to a B<Net::BGP::Notification> object will be passed
+or received by a BGP peering session established with the L<Net::BGP>
+module, a reference to a C<Net::BGP::Notification> object will be passed
 to the corresponding user callback subroutine. The subroutine can then use
 the accessor methods provided by this module to examine the details of the
 NOTIFICATION message.
 
 =head1 METHODS
 
-I<new()> - create a new Net::BGP::Notification object
+I<new()> - create a new C<Net::BGP::Notification> object
 
     $error = Net::BGP::Notification->new(
         ErrorCode    => $error_code,
@@ -198,7 +198,7 @@ I<new()> - create a new Net::BGP::Notification object
         ErrorData    => $error_data
     );
 
-This is the constructor for Net::BGP::Notification objects. It returns a
+This is the constructor for C<Net::BGP::Notification> objects. It returns a
 reference to the newly created object. The following named parameters may
 be passed to the constructor.
 

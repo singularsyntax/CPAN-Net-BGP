@@ -136,7 +136,7 @@ sub _encode_message
 
 =head1 NAME
 
-Net::BGP::Refresh - Class encapsulating BGP-4 REFRESH message
+C<Net::BGP::Refresh> - Class encapsulating BGP-4 REFRESH message
 
 =head1 SYNOPSIS
 
@@ -155,22 +155,21 @@ Net::BGP::Refresh - Class encapsulating BGP-4 REFRESH message
 =head1 DESCRIPTION
 
 This module encapsulates the data contained in a BGP-4 REFRESH message as
-specifed by RFC2918.
-It provides a constructor, and accessor methods for each of the fields, AFI
-and SAFI, of a REFRESH message.
-To refresh the route table for a given address family, call the peer object's
-I<refresh()> function with a B<Net::BGP::Refresh> object as argument.
+specified by RFC 2918. It provides a constructor, and accessor methods for
+each of the fields, AFI and SAFI, of a REFRESH message. To refresh the route
+table for a given address family, call the peer object's I<refresh()> function
+with a C<Net::BGP::Refresh> object as argument.
 
 =head1 METHODS
 
-I<new()> - create a new Net::BGP::Refresh object
+I<new()> - create a new C<Net::BGP::Refresh> object
 
     $error = Net::BGP::Refresh->new(
         AFI      => $address_family_identifier,
         SAFI     => $subsequent_address_family_identifier
     );
 
-This is the constructor for Net::BGP::Refresh objects. It returns a
+This is the constructor for C<Net::BGP::Refresh> objects. It returns a
 reference to the newly created object. The following named parameters may
 be passed to the constructor.
 
