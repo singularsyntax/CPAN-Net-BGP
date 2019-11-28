@@ -727,7 +727,7 @@ However, it is useful under certain circumstances and should not present
 problems as long as one side of the connection is configured to initiate
 connections.
 
-=head2 Refresh
+=head2 AnnounceRefresh
 
 This parameter specifies whether the C<Net::BGP::Peer> will announce support
 for route refresh ('soft re-configure' as specified by RFC 2918). No support
