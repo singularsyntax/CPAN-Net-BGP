@@ -147,8 +147,8 @@ C<Net::BGP::Refresh> - Class encapsulating BGP-4 REFRESH message
         SAFI     => $subsequent_address_family_identifier
     );
 
-    $address_family_identifier            = $error->afi();
-    $subsequent_address_family_identifier = $error->safi();
+    $address_family_identifier            = $refresh->afi();
+    $subsequent_address_family_identifier = $refresh->safi();
 
     $peer->refresh($refresh);
 
@@ -164,7 +164,7 @@ with a C<Net::BGP::Refresh> object as argument.
 
 I<new()> - create a new C<Net::BGP::Refresh> object
 
-    $error = Net::BGP::Refresh->new(
+    $refresh = Net::BGP::Refresh->new(
         AFI      => $address_family_identifier,
         SAFI     => $subsequent_address_family_identifier
     );
@@ -185,11 +185,11 @@ a REFRESH message. Default is I<SAFI_BOTH>.
 
 I<afi()> - retrieve the value of the Address Family Identifier field
 
-    $address_family_identifier            = $error->afi();
+    $address_family_identifier            = $refresh->afi();
 
 I<safi()> - retrieve the value of the Subsequent Address Family Identifier field
 
-    $subsequent_address_family_identifier = $error->safi();
+    $subsequent_address_family_identifier = $refresh->safi();
 
 =head1 SEE ALSO
 
