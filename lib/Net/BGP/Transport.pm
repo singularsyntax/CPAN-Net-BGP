@@ -850,6 +850,7 @@ sub _handle_bgp_conn_open
     my $buffer;
 
     # clear ConnectRetry timer
+    $this->{_connect_retry_timer}->reset();
     $this->{_connect_retry_timer}->stop();
 
     # send OPEN message to peer
@@ -935,7 +936,7 @@ sub _handle_connect_retry_restart
     my $this = shift();
 
     # restart ConnectRetry timer
-    $this->{_connect_retry_timer}->reset();
+    $this->{_connect_retry_timer}->start();
 
     return ( BGP_STATE_ACTIVE );
 }
