@@ -5,6 +5,8 @@ package Net::BGP::Process;
 use strict;
 use vars qw( $VERSION );
 
+use Log::Any qw( $log );
+
 ## Inheritance and Versioning ##
 
 $VERSION = '0.17';

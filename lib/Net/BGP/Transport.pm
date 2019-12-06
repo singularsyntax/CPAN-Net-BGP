@@ -5,6 +5,8 @@ package Net::BGP::Transport;
 use bytes;
 use strict;
 use Errno qw( EAGAIN );
+use Log::Any qw( $log );
+
 use vars qw(
     $VERSION @ISA @BGP @BGP_EVENT_MESSAGE_MAP @BGP_EVENTS @BGP_FSM @BGP_STATES
 );
