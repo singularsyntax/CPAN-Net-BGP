@@ -2,8 +2,11 @@
 
 package Net::BGP::Notification;
 
+use overload '""' => "to_string";
 use strict;
 use vars qw( $VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS @ERRORS );
+
+use Data::Dump qw( dump );
 
 ## Inheritance and Versioning ##
 
@@ -152,6 +155,11 @@ sub error_data
 }
 
 ## Private Methods ##
+
+sub to_string
+{
+    return dump(shift());
+}
 
 ## POD ##
 
