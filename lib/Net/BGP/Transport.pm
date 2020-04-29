@@ -441,26 +441,29 @@ sub on_closed
 
 sub _init_timer
 {
-    my ($this, $timer, $timeout, $event) = @_;
-
-    return IO::Async::Timer::Countdown->new(
+    my ($this, $timer_name, $timeout, $event) = @_;
+    my $timer = IO::Async::Timer::Countdown->new(
         delay => $timeout,
         on_expire => sub {
-            $this->{$timer}->reset();
-            $this->{$timer}->stop();
+            $this->{$timer_name}->reset();
+            $this->{$timer_name}->stop();
             $this->_enqueue_event($event);
             $this->_handle_pending_events();
         }
     );
+
+    $this->add_child($timer);
+
+    return $timer;
 }
 
 sub _restart_timer
 {
-    my ($this, $timer) = @_;
+    my ($this, $timer_name) = @_;
 
-    $this->{$timer}->reset();
-    $this->{$timer}->stop();
-    $this->{$timer}->start();
+    $this->{$timer_name}->reset();
+    $this->{$timer_name}->stop();
+    $this->{$timer_name}->start();
 }
 
 sub _parent

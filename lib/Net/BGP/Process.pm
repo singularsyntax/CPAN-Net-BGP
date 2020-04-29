@@ -72,7 +72,7 @@ sub add_peer
     $this->{_peer_addr}->{$peer->this_id}->{$peer->peer_id} = $peer if $peer->is_listener;
     $this->{_peer_list}->{$peer} = $peer;
 
-    $this->_attach_transport($peer->transport());
+    $this->{_event_loop}->add($peer->transport());
 
     # TODO: should $peer->start() be called for symmetry with remove_peer() ???
 
@@ -99,7 +99,6 @@ sub remove_peer
     }
 
     $peer->{_event_loop} = undef;
-    $this->_detach_transport($peer->transport());
 
     # Return from event loop when there are no more peers
     if ( scalar(keys(%{$this->{_peer_list}})) == 0 ) {
@@ -155,7 +154,7 @@ sub _io_async_init_listen_socket
                         my $transport = $this->_get_peer_transport($stream);
 
                         if ( (defined($transport)) && (! $transport->{_parent}->is_passive()) ) {
-                            $this->_attach_transport($transport);
+                            $this->{_event_loop}->add($transport);
                         }
 
                         $transport->_connected($stream);
@@ -223,36 +222,6 @@ sub _get_peer_transport
     # $transport->{_sibling}->_handle_collision_selfdestuct;
 
     return $transport;
-}
-
-sub _attach_transport
-{
-    my ($this, $transport) = @_;
-
-    $this->{_event_loop}->add($transport);
-    $this->{_event_loop}->add($transport->{_connect_retry_timer});
-    $this->{_event_loop}->add($transport->{_hold_timer});
-    $this->{_event_loop}->add($transport->{_keep_alive_timer});
-}
-
-sub _detach_transport
-{
-    my ($this, $transport) = @_;
-
-    # TODO: none of this may not be necessary if all event loop cleanup is handled
-    #       cleanly within Transport.pm
-
-    if ( any { $_ eq $transport->{_connect_retry_timer} } $this->{_event_loop}->notifiers() ) {
-        $this->{_event_loop}->remove($transport->{_connect_retry_timer});
-    }
-
-    if ( any { $_ eq $transport->{_hold_timer} } $this->{_event_loop}->notifiers() ) {
-        $this->{_event_loop}->remove($transport->{_hold_timer});
-    }
-
-    if ( any { $_ eq $transport->{_keep_alive_timer} } $this->{_event_loop}->notifiers() ) {
-        $this->{_event_loop}->remove($transport->{_keep_alive_timer});
-    }
 }
 
 ## POD ##
