@@ -249,6 +249,7 @@ sub new
 
     my $this = {
 	_parent                => undef,
+        _start                 => FALSE,
         _sibling               => undef,
         _bgp_version           => BGP_VERSION_4,
         _fsm_state             => BGP_STATE_IDLE,
@@ -256,8 +257,6 @@ sub new
         _peer_as4              => FALSE,
         _peer_mbgp             => FALSE,
         _peer_announced_id     => undef,
-        _event_queue           => [],
-        _message_queue         => [],
         _hold_time             => BGP_HOLD_TIME,
         _hold_timer            => undef,
         _keep_alive_time       => BGP_KEEPALIVE_TIME,
@@ -273,7 +272,7 @@ sub new
         $value = shift();
 
         if ( $arg =~ /start/i ) {
-            $this->_start();
+            $this->{_start} = TRUE;
         }
         elsif ( $arg =~ /parent/i ) {
             $this->{_parent} = $value;
@@ -301,18 +300,25 @@ sub new
 
 ## Public Object Methods ##
 
+sub _auto_start
+{
+    my $this = shift();
+
+    if ( $this->{_start} ) {
+        $this->_start();
+    }
+}
+
 sub _start
 {
     my $this = shift();
-    $this->_enqueue_event(BGP_EVENT_START);
-#    $this->_handle_pending_events();
+    $this->_handle_event(BGP_EVENT_START);
 }
 
 sub stop
 {
     my $this = shift();
-    $this->_enqueue_event(BGP_EVENT_STOP);
-    $this->_handle_pending_events();
+    $this->_handle_event(BGP_EVENT_STOP);
 }
 
 sub version
@@ -397,9 +403,7 @@ sub on_read
 
         if ( defined($type) ) {
             substr(${ $buffer_ref }, 0, length($message) + BGP_MESSAGE_HEADER_LENGTH, "");
-            $this->_enqueue_message($message);
-            $this->_enqueue_event($BGP_EVENT_MESSAGE_MAP[$type]);
-            $this->_handle_pending_events();
+            $this->_handle_event($BGP_EVENT_MESSAGE_MAP[$type], $message);
             $read_complete_message = TRUE;
         }
         else {
@@ -411,8 +415,7 @@ sub on_read
     }
 
     if ( $conn_closed ) {
-        $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_CLOSED);
-        $this->_handle_pending_events();
+        $this->_handle_event(BGP_EVENT_TRANSPORT_CONN_CLOSED);
     }
 
     return $read_complete_message;
@@ -447,8 +450,7 @@ sub _init_timer
         on_expire => sub {
             $this->{$timer_name}->reset();
             $this->{$timer_name}->stop();
-            $this->_enqueue_event($event);
-            $this->_handle_pending_events();
+            $this->_handle_event($event);
         }
     );
 
@@ -532,8 +534,7 @@ sub _connected
     my ($this, $stream) = @_;
 
     $this->configure(transport => $stream);
-    $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_OPEN);
-    $this->_handle_pending_events();
+    $this->_handle_event(BGP_EVENT_TRANSPORT_CONN_OPEN);
 }
 
 sub _is_connected
@@ -542,33 +543,9 @@ sub _is_connected
     return ( $this->read_handle()->connected() );
 }
 
-sub _enqueue_event
-{
-    my $this = shift();
-    unshift(@{ $this->{_event_queue} }, shift());
-}
-
-sub _dequeue_event
-{
-    my $this = shift();
-    return ( shift(@{ $this->{_event_queue} }) );
-}
-
-sub _enqueue_message
-{
-    my $this = shift();
-    unshift(@{ $this->{_message_queue} }, shift());
-}
-
-sub _dequeue_message
-{
-    my $this = shift();
-    return ( shift(@{ $this->{_message_queue} }) );
-}
-
 sub _handle_event
 {
-    my ($this, $event) = @_;
+    my ($this, $event, $arg) = @_;
 
     my $state = my $next_state = $this->{_fsm_state};
     my $callback;
@@ -581,7 +558,7 @@ sub _handle_event
         || undef ;
 
     eval {
-        ($next_state, $callback) = $action->($this) if defined $action;
+        ($next_state, $callback) = $action->($this, $arg) if defined $action;
         $this->_debug("_handle_event", sprintf("next-state: \"%s\"", $BGP_STATES[$next_state]));
     };
     if (my $oops = $@)
@@ -642,16 +619,6 @@ sub _trigger_post_transition_action
     }
 }
 
-sub _handle_pending_events
-{
-    my $this = shift();
-    my $event;
-
-    while ( defined($event = $this->_dequeue_event()) ) {
-        $this->_handle_event($event);
-    }
-}
-
 sub _close_session
 {
     my $this = shift();
@@ -665,7 +632,6 @@ sub _close_session
     $this->{_hold_timer}->stop();
     $this->{_keep_alive_timer}->stop();
     $this->{_connect_retry_timer}->stop();
-    $this->{_message_queue} = [];
 
     return ( BGP_STATE_IDLE );
 }
@@ -710,15 +676,14 @@ sub _handle_receive_keepalive_message
 
 sub _handle_receive_update_message
 {
-    my $this = shift();
-    my ($buffer, $update);
+    my ($this, $buffer) = @_;
+    my $update;
 
     # restart Hold Timer
     if ( $this->{_hold_time} != 0 ) {
         $this->{_hold_timer}->reset();
     }
 
-    $buffer = $this->_dequeue_message();
     $update = Net::BGP::Update->_new_from_msg(
         $buffer,
         { as4 => $this->{_peer_as4} }
@@ -730,15 +695,14 @@ sub _handle_receive_update_message
 
 sub _handle_receive_refresh_message
 {
-    my $this = shift();
-    my ($buffer, $refresh);
+    my ($this, $buffer) = @_;
+    my $refresh;
 
     # restart Hold Timer
     if ( $this->{_hold_time} != 0 ) {
         $this->{_hold_timer}->reset();
     }
 
-    $buffer = $this->_dequeue_message();
     $refresh = Net::BGP::Refresh->_new_from_msg($buffer);
 
     unless ( $this->_parent->this_can_refresh ) {
@@ -754,10 +718,10 @@ sub _handle_receive_refresh_message
 
 sub _handle_receive_notification_message
 {
-    my $this = shift();
+    my ($this, $buffer) = @_;
     my $error;
 
-    $error = $this->_decode_bgp_notification_message($this->_dequeue_message());
+    $error = $this->_decode_bgp_notification_message($buffer);
     $this->_close_session();
 
     # invoke user callback function on return
@@ -828,12 +792,12 @@ sub _handle_collision_selfdestuct
 
 sub _handle_bgp_open_received
 {
-    my $this = shift();
-    my ($buffer, $this_id, $peer_id);
+    my ($this, $buffer) = @_;
+    my ($this_id, $peer_id);
 
     $this->_debug("_handle_bgp_open_received");
 
-    if ( ! $this->_decode_bgp_open_message($this->_dequeue_message()) ) {
+    if ( ! $this->_decode_bgp_open_message($buffer) ) {
         ; # do failure stuff
         return ( BGP_STATE_IDLE );
     }
@@ -924,13 +888,11 @@ sub _handle_bgp_start_event
                 $this->_info(sprintf("Active connection established with %s:%d",
                     $this->transport()->read_handle()->peerhost(),
                     $this->transport()->read_handle()->peerport()));
-                $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_OPEN);
-                $this->_handle_pending_events();
+                $this->_handle_event(BGP_EVENT_TRANSPORT_CONN_OPEN);
             },
 
             on_connect_error => sub {
-                $this->_enqueue_event(BGP_EVENT_TRANSPORT_CONN_OPEN_FAILED);
-                $this->_handle_pending_events();
+                $this->_handle_event(BGP_EVENT_TRANSPORT_CONN_OPEN_FAILED);
             }
 
         );

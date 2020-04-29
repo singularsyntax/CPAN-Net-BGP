@@ -121,7 +121,7 @@ sub event_loop
     $this->_io_async_init_listen_socket();
     $this->{_event_loop}->later( sub {
         foreach my $peer ( values(%{$this->{_peer_list}}) ) {
-            $peer->transport()->_handle_pending_events();
+            $peer->transport()->_auto_start();
         }
     });
     $this->{_event_loop}->run();
