@@ -224,7 +224,7 @@ sub start
 {
     foreach my $trans (shift->transports)
      {
-      $trans->start();
+      $trans->_start();
      };
 }
 
