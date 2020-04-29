@@ -72,15 +72,14 @@ sub add_peer
     $this->{_peer_addr}->{$peer->this_id}->{$peer->peer_id} = $peer if $peer->is_listener;
     $this->{_peer_list}->{$peer} = $peer;
 
-    if ( defined($this->{_event_loop}) ) {
-        $this->_io_async_init_listen_socket();
-        $this->_attach_transport($peer->transport());
+    $this->_attach_transport($peer->transport());
 
-        $peer->{_event_loop} = $this->{_event_loop};
-        foreach my $timer ( values(%{ $peer->{_user_timers} }) ) {
-            $timer->start();
-            $this->{_event_loop}->add($timer);
-        }
+    # TODO: should $peer->start() be called for symmetry with remove_peer() ???
+
+    $peer->{_event_loop} = $this->{_event_loop};
+    foreach my $timer ( values(%{ $peer->{_user_timers} }) ) {
+        $timer->start();
+        $this->{_event_loop}->add($timer);
     }
 }
 
@@ -120,6 +119,12 @@ sub event_loop
 {
     my $this = shift();
 
+    $this->_io_async_init_listen_socket();
+    $this->{_event_loop}->later( sub {
+        foreach my $peer ( values(%{$this->{_peer_list}}) ) {
+            $peer->transport()->_handle_pending_events();
+        }
+    });
     $this->{_event_loop}->run();
     $this->_cleanup();
 }
@@ -145,13 +150,15 @@ sub _io_async_init_listen_socket
             if ( $peer->is_listener() ) {
                 my $listener = IO::Async::Listener->new(
 
-                    on_accept => sub {
-                        my ($listener, $socket) = @_;
-                        my $transport = $this->_get_peer_transport($socket);
+                    on_stream => sub {
+                        my ($listener, $stream) = @_;
+                        my $transport = $this->_get_peer_transport($stream);
 
                         if ( (defined($transport)) && (! $transport->{_parent}->is_passive()) ) {
                             $this->_attach_transport($transport);
                         }
+
+                        $transport->_connected($stream);
                     }
                 );
 
@@ -196,21 +203,20 @@ sub _cleanup
 
 sub _get_peer_transport
 {
-    my ($this, $socket) = @_;
-    my $sock_host = $socket->sockhost();
-    my $peer_host = $socket->peerhost();
+    my ($this, $stream) = @_;
+    my $sock_host = $stream->read_handle()->sockhost();
+    my $peer_host = $stream->read_handle()->peerhost();
     my $peer = $this->{_peer_addr}->{$sock_host}->{$peer_host};
     my $transport = undef;
 
     if ( ! defined($peer) ) {
         carp("Ignored incoming connection from unknown peer ($peer_host => $sock_host)");
-        $socket->close();
+        $stream->close();
     } elsif ( ! $peer->is_listener() ) {
         carp("Ignored incoming connection for non-listening peer ($peer_host => $sock_host)");
-        $socket->close();
+        $stream->close();
     } else {
         $transport = $peer->_passive_transport();
-        $transport->_connected($socket);
     }
 
     # TODO: handle Mikrotik patch case???
@@ -227,8 +233,6 @@ sub _attach_transport
     $this->{_event_loop}->add($transport->{_connect_retry_timer});
     $this->{_event_loop}->add($transport->{_hold_timer});
     $this->{_event_loop}->add($transport->{_keep_alive_timer});
-
-    $transport->_handle_pending_events();
 }
 
 sub _detach_transport
@@ -248,10 +252,6 @@ sub _detach_transport
 
     if ( any { $_ eq $transport->{_keep_alive_timer} } $this->{_event_loop}->notifiers() ) {
         $this->{_event_loop}->remove($transport->{_keep_alive_timer});
-    }
-
-    if ( any { $_ eq $transport } $this->{_event_loop}->notifiers() ) {
-        $this->{_event_loop}->remove($transport);
     }
 }
 
