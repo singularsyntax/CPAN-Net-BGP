@@ -72,11 +72,10 @@ sub add_peer
     $this->{_peer_addr}->{$peer->this_id}->{$peer->peer_id} = $peer if $peer->is_listener;
     $this->{_peer_list}->{$peer} = $peer;
 
-    $this->{_event_loop}->add($peer->transport());
-
-    # TODO: should $peer->start() be called for symmetry with remove_peer() ???
-
     $peer->{_event_loop} = $this->{_event_loop};
+    $this->{_event_loop}->add($peer->transport());
+    $this->{_event_loop}->later( sub { $peer->transport()->_auto_start() } );
+
     foreach my $timer ( values(%{ $peer->{_user_timers} }) ) {
         $timer->start();
         $this->{_event_loop}->add($timer);
@@ -119,11 +118,6 @@ sub event_loop
     my $this = shift();
 
     $this->_io_async_init_listen_socket();
-    $this->{_event_loop}->later( sub {
-        foreach my $peer ( values(%{$this->{_peer_list}}) ) {
-            $peer->transport()->_auto_start();
-        }
-    });
     $this->{_event_loop}->run();
     $this->_cleanup();
 }
