@@ -76,6 +76,10 @@ sub add_peer
     $this->{_event_loop}->add($peer->transport());
     $this->{_event_loop}->later( sub { $peer->transport()->_auto_start() } );
 
+    if ( $peer->is_listener() ) {
+        $this->_io_async_init_listen_socket();
+    }
+
     foreach my $timer ( values(%{ $peer->{_user_timers} }) ) {
         $timer->start();
         $this->{_event_loop}->add($timer);
