@@ -1293,7 +1293,7 @@ sub _encode_bgp_notification_message
 
 =head1 NAME
 
-Net::BGP::Transport - Class encapsulating BGP-4 transport session state and functionality
+C<Net::BGP::Transport> - Class encapsulating BGP-4 transport session state and functionality
 
 =head1 SYNOPSIS
 
@@ -1319,17 +1319,17 @@ Net::BGP::Transport - Class encapsulating BGP-4 transport session state and func
 =head1 DESCRIPTION
 
 This module encapsulates the state and functionality associated with a BGP
-transport connection. Each instance of a Net::BGP::Transport object
+transport connection. Each instance of a C<Net::BGP::Transport> object
 corresponds to a TCP session with a distinct peer. It should not be used by
-itself, but encapsulated in a Net::BGP::Peer object.
+itself, but encapsulated in a L<Net::BGP::Peer> object.
 
 =head1 CONSTRUCTOR
 
 =over 4
 
-=item new() - create a new Net::BGP::Transport object
+=item new() - create a new C<Net::BGP::Transport> object
 
-This is the constructor for Net::BGP::Transport objects. It returns a
+This is the constructor for C<Net::BGP::Transport> objects. It returns a
 reference to the newly created object. The following named parameters may
 be passed to the constructor. Once the object is created, the information
 can not be changed.
@@ -1344,13 +1344,11 @@ can not be changed.
 
 =item KeepAliveTime
 
-Has the same meaning as the equivalent named argument for Net::BGP::Peer.
+Has the same meaning as the equivalent named argument for L<Net::BGP::Peer>.
 
 =item Parent
 
-The parent Net::BGP::Peer object.
-
-=back
+The parent L<Net::BGP::Peer> object.
 
 =back
 
@@ -1360,8 +1358,6 @@ The parent Net::BGP::Peer object.
 
 =item version()
 
-=item is_established()
-
 =item start()
 
 =item stop()
@@ -1370,8 +1366,10 @@ The parent Net::BGP::Peer object.
 
 =item refresh()
 
-These methods do the actual I<work> for the methods of the same name in
-Net::BGP::Peer.
+=item is_established()
+
+These methods do the actual work for the methods of the same name in
+L<Net::BGP::Peer>.
 
 =back
 
