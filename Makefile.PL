@@ -11,7 +11,7 @@ WriteMakefile(
     'VERSION_FROM'      => 'lib/Net/BGP.pm', # finds $VERSION
     'SIGN'              => 1,
     'PREREQ_PM'         => {
-        'IO::Async'     => 0.74,
+        'IO::Async'     => 0.77,
         'IO::Select'    => 0,
         'IO::Socket'    => 0,
         'List::Util'    => 1.41
